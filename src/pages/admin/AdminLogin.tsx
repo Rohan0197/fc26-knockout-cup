@@ -21,7 +21,7 @@ export default function AdminLogin() {
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!email.trim() || !password) {
-      setError('Enter your email and password.')
+      setError('Enter your username and password.')
       return
     }
     setBusy(true)
@@ -61,11 +61,14 @@ export default function AdminLogin() {
           <p className="mt-4 text-sm text-mute">Restricted to tournament administrators of {settings.name}.</p>
 
           <div className="mt-6 space-y-4">
-            <Field label="Email">
+            <Field label="Username or email">
               <input
                 className="input"
-                type="email"
+                type="text"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 aria-invalid={Boolean(error)}
@@ -97,7 +100,7 @@ export default function AdminLogin() {
           {mode === 'demo' && (
             <div className="mt-5 border border-warn/40 bg-warn/[0.07] px-3 py-2.5 text-xs leading-relaxed text-warn">
               <strong className="label">Development demo</strong> — no Supabase project connected. Use{' '}
-              <code className="text-white">{DEMO_ADMIN.email}</code> / <code className="text-white">{DEMO_ADMIN.password}</code>.
+              <code className="text-white">demo</code> / <code className="text-white">{DEMO_ADMIN.password}</code>.
             </div>
           )}
         </form>

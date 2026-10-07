@@ -54,6 +54,10 @@ function throwIfError(error: DbError): void {
       throw new Error('A match with that round and match number already exists.')
     throw new Error('That record already exists.')
   }
+  if (/permission denied/i.test(error.message))
+    throw new Error(
+      'The database refused access (permission denied). Run section 8b "Data API privileges" of supabase/schema.sql in the Supabase SQL editor.',
+    )
   if (error.code === '42501' || /row-level security/i.test(error.message))
     throw new Error('You do not have permission to do that. Sign in as an administrator.')
   throw new Error(error.message)
@@ -162,6 +166,18 @@ async function toAdminSession(sb: SupabaseClient, user: User): Promise<AdminSess
   return { userId: user.id, email: user.email ?? '', isAdmin: Boolean(data) }
 }
 
+/**
+ * Supabase signs people in with an email address. To let admins use a plain username, a login
+ * without an "@" is mapped to `<username>@<domain>`. Create the Supabase user with that exact
+ * address (Auto Confirm User on - no email is ever sent). Domain is configurable.
+ */
+export function toLoginEmail(input: string): string {
+  const v = input.trim().toLowerCase()
+  if (v.includes('@')) return v
+  const domain = (import.meta.env.VITE_ADMIN_EMAIL_DOMAIN as string | undefined)?.trim() || 'example.com'
+  return `${v}@${domain}`
+}
+
 export function createSupabaseAuth(sb: SupabaseClient): AuthApi {
   return {
     async getSession() {
@@ -169,8 +185,8 @@ export function createSupabaseAuth(sb: SupabaseClient): AuthApi {
       return data.session ? toAdminSession(sb, data.session.user) : null
     },
     async signIn(email, password) {
-      const { data, error } = await sb.auth.signInWithPassword({ email, password })
-      if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Incorrect email or password.' : error.message)
+      const { data, error } = await sb.auth.signInWithPassword({ email: toLoginEmail(email), password })
+      if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Incorrect username or password.' : error.message)
       return toAdminSession(sb, data.user)
     },
     async signOut() {

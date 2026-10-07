@@ -301,8 +301,9 @@ export function createDemoAuth(): AuthApi {
       return read()
     },
     async signIn(email, password) {
-      if (email.trim().toLowerCase() !== DEMO_ADMIN.email || password !== DEMO_ADMIN.password)
-        throw new Error('Incorrect email or password.')
+      const who = email.trim().toLowerCase()
+      if ((who !== DEMO_ADMIN.email && who !== 'demo') || password !== DEMO_ADMIN.password)
+        throw new Error('Incorrect username or password.')
       localStorage.setItem(AUTH_KEY, '1')
       const s = read()!
       listeners.forEach((l) => l(s))

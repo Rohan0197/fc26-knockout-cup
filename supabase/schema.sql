@@ -455,6 +455,23 @@ grant  execute on function public.generate_bracket(uuid[])           to authenti
 grant  execute on function public.reset_tournament()                 to authenticated;
 
 -- -----------------------------------------------------------------------------
+-- 8b. DATA API PRIVILEGES
+--   Newer Supabase projects no longer open new tables to the API automatically, so grant
+--   exactly what is needed. Row Level Security above still decides WHICH rows each role may
+--   touch: visitors (anon) can only read; writes need an admin.
+-- -----------------------------------------------------------------------------
+grant usage on schema public to anon, authenticated;
+
+grant select on public.players, public.matches, public.tournament_settings, public.player_standings
+  to anon, authenticated;
+grant select on public.admins to authenticated;
+
+grant insert, update, delete on public.players, public.matches to authenticated;
+grant update on public.tournament_settings to authenticated;
+
+grant execute on function public.is_admin() to anon, authenticated;
+
+-- -----------------------------------------------------------------------------
 -- 9. REALTIME  (public pages update live when the admin saves)
 -- -----------------------------------------------------------------------------
 do $$
