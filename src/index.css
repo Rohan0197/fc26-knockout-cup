@@ -1,0 +1,364 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --font-sans: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-ink-950: #05070a;
+  --color-ink-900: #0a0d12;
+  --color-ink-800: #11151c;
+  --color-ink-700: #181e28;
+  --color-ink-600: #232b38;
+
+  --color-pitch: #2bff88;
+  --color-pitch-dim: #17b868;
+  --color-gold: #e6c36a;
+  --color-silver: #c3cbd6;
+  --color-bronze: #c98b5e;
+
+  --color-mute: #8892a3;
+  --color-soft: #b4bcc9;
+  --color-danger: #ff5c6c;
+  --color-warn: #ffb547;
+
+  --breakpoint-xs: 30rem;
+}
+
+:root {
+  color-scheme: dark;
+  --cut: 16px;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--color-ink-950);
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* no background here: the html element paints the base colour so the fixed stadium layers (z-index -10) stay visible */
+  color: #fff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+::selection {
+  background: rgba(43, 255, 136, 0.28);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-pitch);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3342 transparent;
+}
+
+@layer components {
+  /* ---------- typography ---------- */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-style: italic;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    line-height: 0.92;
+  }
+  .label {
+    font-family: var(--font-display);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+  }
+  .eyebrow {
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    font-size: 0.8rem;
+    color: var(--color-pitch);
+  }
+  .num {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
+  /* ---------- cut-corner geometry ---------- */
+  .cut-tr {
+    clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  }
+  .cut-both {
+    clip-path: polygon(
+      0 0,
+      calc(100% - var(--cut)) 0,
+      100% var(--cut),
+      100% 100%,
+      var(--cut) 100%,
+      0 calc(100% - var(--cut))
+    );
+  }
+
+  .panel {
+    position: relative;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.016)),
+      rgba(10, 13, 18, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.085);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  }
+  /* the angled edge line, so the cut reads as part of the border */
+  .panel::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: var(--cut);
+    width: calc(var(--cut) * 1.4143);
+    height: 2px;
+    background: rgba(255, 255, 255, 0.16);
+    transform-origin: 0 0;
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  .panel-both {
+    clip-path: polygon(
+      0 0,
+      calc(100% - var(--cut)) 0,
+      100% var(--cut),
+      100% 100%,
+      var(--cut) 100%,
+      0 calc(100% - var(--cut))
+    );
+  }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    padding: 0.7rem 1.4rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background-color 0.2s,
+      color 0.2s,
+      border-color 0.2s,
+      box-shadow 0.25s,
+      transform 0.2s,
+      opacity 0.2s;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    border: 0;
+    white-space: nowrap;
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--color-pitch);
+    color: var(--color-ink-950);
+  }
+  .btn-primary:not(:disabled):hover {
+    background: #5dffa3;
+    box-shadow: 0 0 28px rgba(43, 255, 136, 0.45);
+  }
+  .btn-ghost {
+    background: rgba(255, 255, 255, 0.07);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  }
+  .btn-ghost:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(43, 255, 136, 0.7);
+    color: var(--color-pitch);
+  }
+  .btn-danger {
+    background: rgba(255, 92, 108, 0.14);
+    color: var(--color-danger);
+    box-shadow: inset 0 0 0 1px rgba(255, 92, 108, 0.45);
+  }
+  .btn-danger:not(:disabled):hover {
+    background: var(--color-danger);
+    color: var(--color-ink-950);
+  }
+  .btn-sm {
+    padding: 0.5rem 0.95rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.14em;
+  }
+
+  /* ---------- form controls ---------- */
+  .input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    padding: 0.7rem 0.85rem;
+    font-size: 1rem; /* 16px: anything smaller makes iOS Safari zoom the page on focus */
+    transition:
+      border-color 0.2s,
+      background-color 0.2s;
+    border-radius: 0;
+  }
+  .input::placeholder {
+    color: #5d6676;
+  }
+  .input:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--color-pitch);
+    background: rgba(43, 255, 136, 0.05);
+  }
+  .input[aria-invalid='true'] {
+    border-color: var(--color-danger);
+  }
+  select.input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%238892a3' stroke-width='2'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+    padding-right: 2.2rem;
+  }
+  select.input option {
+    background: #11151c;
+    color: #fff;
+  }
+  input[type='date'].input,
+  input[type='time'].input {
+    color-scheme: dark;
+  }
+
+  /* ---------- loading ---------- */
+  .skeleton {
+    background: linear-gradient(
+      100deg,
+      rgba(255, 255, 255, 0.04) 20%,
+      rgba(255, 255, 255, 0.11) 40%,
+      rgba(255, 255, 255, 0.04) 60%
+    );
+    background-size: 220% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+
+  .grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- touch devices ---------- */
+@media (pointer: coarse) {
+  /* comfortable 44px tap targets */
+  button,
+  [role='tab'],
+  .btn,
+  select.input,
+  input.input {
+    min-height: 44px;
+  }
+  button:not(.btn):not([role='tab']):not(.input) {
+    min-width: 44px;
+  }
+}
+
+/* ---------- phones: cheaper rendering ---------- */
+@media (max-width: 767px) {
+  /* backdrop-filter on dozens of cards is the main GPU cost on phones - use a more opaque fill instead */
+  .panel {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.016)),
+      rgba(10, 13, 18, 0.88);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(43, 255, 136, 0.6);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 6px rgba(43, 255, 136, 0);
+  }
+}
+@keyframes drift {
+  0% {
+    transform: translate3d(-4%, 0, 0);
+  }
+  50% {
+    transform: translate3d(4%, -2%, 0);
+  }
+  100% {
+    transform: translate3d(-4%, 0, 0);
+  }
+}
+@keyframes sweep {
+  from {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(320%) skewX(-20deg);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-pitch);
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
