@@ -79,10 +79,10 @@ export default function AdminLayout() {
               <span className="label bg-pitch px-2 py-[3px] text-[0.68rem] tracking-[0.22em] text-ink-950">Admin</span>
             </div>
             <div className="flex items-center gap-2">
-              <Link to="/" className="btn btn-ghost btn-sm" target="_blank" rel="noreferrer">
+              <Link to="/" className="btn btn-ghost btn-sm" target="_blank" rel="noreferrer" aria-label="View public site (opens in a new tab)">
                 <ExternalLink size={14} /> <span className="hidden sm:inline">View site</span>
               </Link>
-              <button className="btn btn-ghost btn-sm" onClick={() => void signOut()} title={session.email}>
+              <button className="btn btn-ghost btn-sm" onClick={() => void signOut()} title={`Signed in as ${session.email}`} aria-label="Sign out">
                 <LogOut size={14} /> <span className="hidden sm:inline">Sign out</span>
               </button>
             </div>

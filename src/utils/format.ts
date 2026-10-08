@@ -40,14 +40,28 @@ export const STATUS_LABEL: Record<MatchStatus, string> = {
   CANCELLED: 'CANCELLED',
 }
 
-export const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
+/** "Rohan Dongre" -> "RD", "Player 02" -> "P2", "Madonna" -> "MA". Safe for non-Latin names and emoji. */
+export function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  const chars = (w: string) => Array.from(w)
+  if (words.length === 1) return chars(words[0]).slice(0, 2).join('').toUpperCase()
+  let last = words[words.length - 1]
+  if (/^\d+$/.test(last)) last = String(Number(last)) // "04" -> "4"
+  return (chars(words[0])[0] + chars(last)[0]).toUpperCase()
+}
+
+/** Stable colour for a player: the same name always gets the same hue. Curated so tiles look good on the dark theme. */
+const AVATAR_HUES = [152, 188, 212, 250, 282, 322, 350, 14, 36, 168, 226, 300]
+export function avatarHue(name: string): number {
+  const key = name.trim().toLowerCase().replace(/\s+/g, ' ')
+  let h = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return AVATAR_HUES[(h >>> 0) % AVATAR_HUES.length]
+}
 
 export const pad2 = (n: number) => String(n).padStart(2, '0')
 

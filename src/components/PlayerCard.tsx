@@ -52,7 +52,7 @@ function PlayerCardImpl({ standing: s, index = 0 }: Props) {
               out ? 'opacity-55 grayscale' : ''
             }`}
           >
-            <PlayerAvatar player={s.player} fill className="!bg-transparent [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" />
+            <PlayerAvatar player={s.player} fill plain className="!bg-transparent [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" />
           </div>
 
           <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
@@ -77,9 +77,9 @@ function PlayerCardImpl({ standing: s, index = 0 }: Props) {
 
         {/* details */}
         <div className="px-4 pb-4 pt-3 sm:px-5">
-          <h3 className={`display truncate text-[1.65rem] leading-none sm:text-3xl ${out ? 'text-soft' : 'text-white'}`}>
+          <h2 className={`display truncate text-[1.65rem] leading-none sm:text-3xl ${out ? 'text-soft' : 'text-white'}`}>
             {s.player.name}
-          </h3>
+          </h2>
           <div className="label mt-1.5 truncate text-[0.72rem] text-mute">{s.player.club ?? 'Independent'}</div>
 
           <div className="mt-4 grid grid-cols-3 border-t border-white/[0.08] pt-3">

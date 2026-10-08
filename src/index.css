@@ -32,6 +32,7 @@
 html {
   scroll-behavior: smooth;
   background: var(--color-ink-950);
+  overflow-x: hidden;
   overflow-x: clip;
 }
 
@@ -44,6 +45,7 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow-x: hidden;
   overflow-x: clip;
 }
 
@@ -258,6 +260,13 @@ body {
 
   .grain {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Grid items default to min-width:auto, so a single long unbreakable name would stretch the whole column.
+     Let every grid child shrink, so `truncate` / wrapping can do their job. */
+  .grid > *,
+  .grid-cols-1 > * {
+    min-width: 0;
   }
 
   .hide-scrollbar {

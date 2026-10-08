@@ -1,23 +1,37 @@
 import { useState } from 'react'
 import type { Player } from '../../types'
 import { cn } from '../../utils/cn'
+import { avatarHue, initials } from '../../utils/format'
 
 interface Props {
   player: Pick<Player, 'name' | 'avatar_url'> | null
-  /** Pixel size for the round/square avatar. Ignored when `fill` is set. */
+  /** Pixel size for the square avatar. Ignored when `fill` is set. */
   size?: number
   /** Fill the parent (used on player cards). */
   fill?: boolean
+  /** No tile behind the initials - they sit directly on the parent's artwork (player cards). */
+  plain?: boolean
   className?: string
   /** Shape: sharp square with cut corner (default) or circle. */
   round?: boolean
 }
 
-/** Replaceable avatar: a real image when `avatar_url` is set, otherwise a neutral player silhouette. */
-export function PlayerAvatar({ player, size = 44, fill, className, round }: Props) {
+/**
+ * Player picture. Uses the photo when `avatar_url` is set; otherwise shows the player's initials on a
+ * colour derived from their name (so every player looks distinct and keeps the same colour everywhere).
+ * With no player at all (an undecided "TBD" slot) it falls back to a neutral silhouette.
+ */
+export function PlayerAvatar({ player, size = 44, fill, plain, className, round }: Props) {
   const [failed, setFailed] = useState(false)
   const showImage = Boolean(player?.avatar_url) && !failed
-  const style = fill ? undefined : { width: size, height: size }
+  const hue = player ? avatarHue(player.name) : 0
+
+  const tile =
+    !plain && player && !showImage
+      ? {
+          background: `linear-gradient(145deg, hsl(${hue} 52% 30%), hsl(${hue} 58% 13%))`,
+        }
+      : undefined
 
   return (
     <div
@@ -27,7 +41,11 @@ export function PlayerAvatar({ player, size = 44, fill, className, round }: Prop
         round ? 'rounded-full' : 'cut-tr',
         className,
       )}
-      style={{ ...style, ['--cut' as string]: `${Math.max(6, Math.round(size / 5))}px` }}
+      style={{
+        ...(fill ? undefined : { width: size, height: size }),
+        ...tile,
+        ['--cut' as string]: `${Math.max(6, Math.round(size / 5))}px`,
+      }}
       aria-hidden
     >
       {showImage ? (
@@ -39,6 +57,28 @@ export function PlayerAvatar({ player, size = 44, fill, className, round }: Prop
           onError={() => setFailed(true)}
           className="h-full w-full object-cover"
         />
+      ) : player ? (
+        <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="xMidYMid meet">
+          {!plain && (
+            <path d="M-10 70 L70 -10 M10 110 L110 10" stroke={`hsl(${hue} 60% 70% / 0.10)`} strokeWidth="9" fill="none" />
+          )}
+          <text
+            x="50"
+            y="50"
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={plain ? 46 : 44}
+            letterSpacing="1"
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontStyle: 'italic',
+              fill: plain ? `hsl(${hue} 70% 78% / 0.9)` : '#fff',
+            }}
+          >
+            {initials(player.name)}
+          </text>
+        </svg>
       ) : (
         <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="xMidYMax slice">
           <defs>
