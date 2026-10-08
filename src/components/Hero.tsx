@@ -16,7 +16,9 @@ export function Hero() {
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end start'] })
   const titleY = useTransform(scrollYProgress, [0, 1], [0, 70])
   const ghostY = useTransform(scrollYProgress, [0, 1], [0, 150])
-  const still = useMediaQuery('(max-width: 767px)') || Boolean(useReducedMotion())
+  const phone = useMediaQuery('(max-width: 767px)')
+  const reduced = useReducedMotion()
+  const still = phone || Boolean(reduced)
 
   const words = settings.name.trim().split(/\s+/)
   const split = Math.ceil(words.length / 2)

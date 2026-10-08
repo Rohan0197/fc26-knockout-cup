@@ -35,7 +35,7 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
 
   const n = Number(number)
   const errors: Record<string, string> = {}
-  if (!Number.isInteger(n) || n < 1 || n > 16) errors.number = 'Match number must be a whole number from 1 to 16.'
+  if (!Number.isInteger(n) || n < 1 || n > 32) errors.number = 'Match number must be a whole number from 1 to 32.'
   else if (matches.some((m) => m.id !== editing?.id && m.round === round && m.match_number === n))
     errors.number = `${ROUND_LABEL[round]} match ${n} already exists.`
   if (p1 && p1 === p2) errors.p2 = 'A player cannot play themselves.'

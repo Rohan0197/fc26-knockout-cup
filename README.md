@@ -70,6 +70,13 @@ Export your sign-up sheet as CSV with columns `name` (required) and optionally `
 Delete any other columns (emails, phone numbers…) first, then in Supabase: **Table Editor → `players` → Insert → Import data from CSV**.
 Duplicate names are rejected by the database, so re-importing is safe.
 
+### Upgrading an existing database to 64-player brackets
+
+If you ran `supabase/schema.sql` before 64-player support was added, run
+[`supabase/migrations/001_64_player_bracket.sql`](supabase/migrations/001_64_player_bracket.sql) once in the SQL Editor.
+It only adds the *Round of 64* / *Round of 32* rounds and the bigger bracket generator. Players and results are untouched.
+New setups already include it.
+
 ### Optional: demo data in Supabase
 
 [`supabase/seed_demo.sql`](supabase/seed_demo.sql) loads 8 sample players and a quarter-final bracket with two results.
@@ -79,7 +86,7 @@ then delete the players.
 ## 3 · Running the tournament
 
 1. **Players** – load the starting list once in Supabase (below), then use **Admin → Players** to add, edit or remove anyone later (name required, duplicates blocked, optional club / avatar URL).
-2. **Admin → Bracket** – tick 2, 4, 8 or 16 players, *Draw* (random or in order), *Create bracket*. All rounds are created;
+2. **Admin → Bracket** – tick 2, 4, 8, 16, 32 or 64 players, *Draw* (random or in order), *Create bracket*. A 64-player bracket starts at the Round of 64 and runs 32 → 16 → quarter-finals → semi-finals → final (63 matches). All rounds are created;
    later rounds fill themselves in.
 3. **Admin → Fixtures** – set dates/times, or add/edit single fixtures by hand.
 4. **Admin → Results** – *Enter result*. Type two scores; the winner, stats, standings and bracket update everywhere.

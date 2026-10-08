@@ -110,10 +110,9 @@ body {
     position: relative;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.016)),
-      rgba(10, 13, 18, 0.72);
+      rgba(10, 13, 18, 0.8);
     border: 1px solid rgba(255, 255, 255, 0.085);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    /* no backdrop-filter: dozens of blurred cards (bracket, fixtures) make big tournaments sluggish */
     clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
   }
   /* the angled edge line, so the cut reads as part of the border */
@@ -281,18 +280,6 @@ body {
   }
   button:not(.btn):not([role='tab']):not(.input) {
     min-width: 44px;
-  }
-}
-
-/* ---------- phones: cheaper rendering ---------- */
-@media (max-width: 767px) {
-  /* backdrop-filter on dozens of cards is the main GPU cost on phones - use a more opaque fill instead */
-  .panel {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.016)),
-      rgba(10, 13, 18, 0.88);
   }
 }
 

@@ -1,9 +1,10 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Crown, GitBranch } from 'lucide-react'
+import { Crown, GitBranch, LayoutList } from 'lucide-react'
 import type { Match, Player, Round } from '../types'
 import { ROUND_LABEL } from '../lib/bracket'
 import { useMatches } from '../hooks/useMatches'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { fmtKickoff, pad2 } from '../utils/format'
 import { MatchCard } from './MatchCard'
 import { EmptyState } from './ui/EmptyState'
@@ -12,7 +13,8 @@ import { BracketSkeleton } from './ui/Skeletons'
 
 const BOX_W = 212
 const GAP = 44
-const SLOT_H = 120
+/** Vertical room per first-round match. Tighter for big brackets so a 64-player tree stays manageable. */
+const slotHeightFor = (firstRoundMatches: number) => (firstRoundMatches > 8 ? 104 : 120)
 const HEADER_H = 52
 const CHAMP_W = 196
 
@@ -88,9 +90,9 @@ function Line({ lit, style, axis, origin, delay }: { lit: boolean; style: React.
   )
 }
 
-function Slot({ match, byId, outWidth, lit, delay }: { match: Match; byId: Map<string, Player>; outWidth: number | null; lit: boolean; delay: number }) {
+function Slot({ match, byId, outWidth, lit, delay, slotH }: { match: Match; byId: Map<string, Player>; outWidth: number | null; lit: boolean; delay: number; slotH: number }) {
   return (
-    <div className="relative flex flex-1 items-center" style={{ minHeight: SLOT_H }}>
+    <div className="relative flex flex-1 items-center" style={{ minHeight: slotH }}>
       <BracketMatch match={match} byId={byId} />
       {outWidth !== null && (
         <Line lit={lit} axis="x" origin="left" delay={delay} style={{ left: '100%', top: '50%', width: outWidth }} />
@@ -102,7 +104,8 @@ function Slot({ match, byId, outWidth, lit, delay }: { match: Match; byId: Map<s
 /* ------------------------------------------------------------------ the tree */
 
 function Tree({ rounds, byId, currentRound }: { rounds: { round: Round; matches: Match[] }[]; byId: Map<string, Player>; currentRound: Round | null }) {
-  const bodyH = Math.max(...rounds.map((r) => r.matches.length)) * SLOT_H
+  const slotH = slotHeightFor(Math.max(...rounds.map((r) => r.matches.length)))
+  const bodyH = Math.max(...rounds.map((r) => r.matches.length)) * slotH
   const last = rounds[rounds.length - 1]
   const finalDone = last.round === 'FINAL' && last.matches[0]?.status === 'COMPLETED'
   const champion = finalDone ? (byId.get(last.matches[0].winner_id ?? '') ?? null) : null
@@ -137,8 +140,8 @@ function Tree({ rounds, byId, currentRound }: { rounds: { round: Round; matches:
               {pairs.length > 0
                 ? pairs.map(([a, b]) => (
                     <div key={a.id} className="relative flex flex-1 flex-col">
-                      <Slot match={a} byId={byId} outWidth={GAP / 2} lit={a.status === 'COMPLETED'} delay={delay} />
-                      <Slot match={b} byId={byId} outWidth={GAP / 2} lit={b.status === 'COMPLETED'} delay={delay} />
+                      <Slot match={a} byId={byId} outWidth={GAP / 2} lit={a.status === 'COMPLETED'} delay={delay} slotH={slotH} />
+                      <Slot match={b} byId={byId} outWidth={GAP / 2} lit={b.status === 'COMPLETED'} delay={delay} slotH={slotH} />
                       <Line axis="y" origin="top" lit={a.status === 'COMPLETED'} delay={delay + 0.2} style={{ left: `calc(100% + ${GAP / 2}px)`, top: '25%', height: '25%' }} />
                       <Line axis="y" origin="bottom" lit={b.status === 'COMPLETED'} delay={delay + 0.2} style={{ left: `calc(100% + ${GAP / 2}px)`, top: '50%', height: '25%' }} />
                       <Line axis="x" origin="left" lit={a.status === 'COMPLETED' && b.status === 'COMPLETED'} delay={delay + 0.4} style={{ left: `calc(100% + ${GAP / 2}px)`, top: '50%', width: GAP / 2 }} />
@@ -152,6 +155,7 @@ function Tree({ rounds, byId, currentRound }: { rounds: { round: Round; matches:
                       outWidth={isLast && showChampion ? GAP : null}
                       lit={m.status === 'COMPLETED'}
                       delay={delay}
+                      slotH={slotH}
                     />
                   ))}
             </div>
@@ -195,30 +199,74 @@ function Tree({ rounds, byId, currentRound }: { rounds: { round: Round; matches:
 
 /* ------------------------------------------------------------------ public component */
 
-export function KnockoutBracket() {
-  const { matches, rounds, byId, tournament, loading } = useMatches()
-  const roundKeys = rounds.map((r) => r.round).join()
-  const defaultRound = tournament.currentRound ?? rounds[0]?.round ?? null
-  const [mobileRound, setMobileRound] = useState<Round | null>(defaultRound)
+type RoundGroup = { round: Round; matches: Match[] }
 
-  // Keep the mobile round selection valid as fixtures change.
-  useEffect(() => {
-    setMobileRound((cur) => (cur && roundKeys.split(',').includes(cur) ? cur : defaultRound))
-  }, [roundKeys, defaultRound])
+/** Round-by-round list: used on phones, and on larger screens as an alternative to the tree. */
+function RoundsView({ rounds, byId, initialRound }: { rounds: RoundGroup[]; byId: Map<string, Player>; initialRound: Round | null }) {
+  const [picked, setPicked] = useState<Round | null>(initialRound)
+  const active = rounds.find((r) => r.round === picked) ?? rounds.find((r) => r.round === initialRound) ?? rounds[0]
+  return (
+    <div>
+      <div className="hide-scrollbar -mx-4 mb-5 flex gap-2 overflow-x-auto px-4 md:mx-0 md:px-0" role="tablist" aria-label="Bracket rounds">
+        {rounds.map((r) => {
+          const on = active?.round === r.round
+          const played = r.matches.filter((m) => m.status === 'COMPLETED').length
+          return (
+            <button
+              key={r.round}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setPicked(r.round)}
+              className={`label shrink-0 px-4 py-3 text-[0.85rem] ring-1 ring-inset transition-colors ${
+                on ? 'bg-pitch text-ink-950 ring-pitch' : 'bg-white/[0.04] text-soft ring-white/12 hover:text-white'
+              }`}
+            >
+              {ROUND_LABEL[r.round]}
+              <span className={`num ml-2 text-[0.8rem] ${on ? 'text-ink-950/70' : 'text-mute'}`}>
+                {played}/{r.matches.length}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" key={active?.round}>
+        {active?.matches.map((m, i) => (
+          <MatchCard key={m.id} match={m} byId={byId} index={i} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface BracketProps {
+  /** How a bracket with MORE than 4 rounds (32 or 64 players) opens on large screens. Default: the full tree. */
+  largeAs?: 'tree' | 'rounds'
+}
+
+export function KnockoutBracket({ largeAs = 'tree' }: BracketProps) {
+  const { matches, rounds, byId, tournament, loading } = useMatches()
+  const wide = useMediaQuery('(min-width: 768px)')
+  const [chosen, setChosen] = useState<'tree' | 'rounds' | null>(null)
+  const big = rounds.length > 4
+  const view = chosen ?? (big ? largeAs : 'tree')
+  const showTree = wide && view === 'tree'
+  const roundKeys = rounds.map((r) => r.round).join()
+  const initialRound = tournament.currentRound ?? rounds[0]?.round ?? null
 
   const scroller = useRef<HTMLDivElement>(null)
   const [overflowing, setOverflowing] = useState(false)
   useEffect(() => {
     const el = scroller.current
-    if (!el) return
+    if (!el) {
+      setOverflowing(false)
+      return
+    }
     const check = () => setOverflowing(el.scrollWidth > el.clientWidth + 8)
     check()
     const ro = new ResizeObserver(check)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [roundKeys, loading, matches.length])
-
-  const activeMobile = useMemo(() => rounds.find((r) => r.round === mobileRound) ?? rounds[0], [rounds, mobileRound])
+  }, [roundKeys, loading, matches.length, showTree])
 
   if (loading) return <BracketSkeleton />
 
@@ -232,43 +280,50 @@ export function KnockoutBracket() {
     )
   }
 
+  const hint = (
+    <div className="label flex items-center gap-2 text-[0.72rem] text-mute">
+      Scroll sideways to see every round <span aria-hidden>→</span>
+    </div>
+  )
+
   return (
     <>
-      {/* tablet / desktop: the full bracket tree */}
-      {overflowing && (
-        <div className="label mb-2 hidden items-center justify-end gap-2 text-[0.72rem] text-mute md:flex">
-          Scroll sideways to see every round <span aria-hidden>→</span>
+      {/* larger screens, big brackets: choose full tree or round-by-round */}
+      {wide && big && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex" role="group" aria-label="Bracket view">
+            {(
+              [
+                ['tree', 'Full bracket', GitBranch],
+                ['rounds', 'By round', LayoutList],
+              ] as const
+            ).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setChosen(key)}
+                aria-pressed={view === key}
+                className={`label flex items-center gap-2 px-4 py-2.5 text-[0.8rem] ring-1 ring-inset transition-colors ${
+                  view === key ? 'bg-pitch text-ink-950 ring-pitch' : 'bg-white/[0.04] text-soft ring-white/12 hover:text-white'
+                }`}
+              >
+                <Icon size={14} /> {label}
+              </button>
+            ))}
+          </div>
+          {showTree && overflowing && hint}
         </div>
       )}
-      <div ref={scroller} className="panel hidden overflow-x-auto overscroll-x-contain p-6 md:block">
-        <div className="mx-auto w-max">
-          <Tree rounds={rounds} byId={byId} currentRound={tournament.currentRound} />
-        </div>
-      </div>
+      {showTree && !big && overflowing && <div className="mb-2 flex justify-end">{hint}</div>}
 
-      {/* mobile: round-by-round vertical bracket */}
-      <div className="md:hidden">
-        <div className="hide-scrollbar -mx-4 mb-5 flex gap-2 overflow-x-auto px-4" role="tablist" aria-label="Bracket rounds">
-          {rounds.map((r) => (
-            <button
-              key={r.round}
-              role="tab"
-              aria-selected={activeMobile?.round === r.round}
-              onClick={() => setMobileRound(r.round)}
-              className={`label shrink-0 px-4 py-3 text-[0.85rem] ring-1 ring-inset transition-colors ${
-                activeMobile?.round === r.round ? 'bg-pitch text-ink-950 ring-pitch' : 'bg-white/[0.04] text-soft ring-white/12'
-              }`}
-            >
-              {ROUND_LABEL[r.round]}
-            </button>
-          ))}
+      {showTree ? (
+        <div ref={scroller} className="panel overflow-x-auto overscroll-x-contain p-6">
+          <div className="mx-auto w-max">
+            <Tree rounds={rounds} byId={byId} currentRound={tournament.currentRound} />
+          </div>
         </div>
-        <div className="space-y-4" key={activeMobile?.round}>
-          {activeMobile?.matches.map((m, i) => (
-            <MatchCard key={m.id} match={m} byId={byId} index={i} />
-          ))}
-        </div>
-      </div>
+      ) : (
+        <RoundsView rounds={rounds} byId={byId} initialRound={initialRound} />
+      )}
     </>
   )
 }

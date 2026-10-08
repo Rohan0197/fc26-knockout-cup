@@ -89,7 +89,7 @@ export default function Home() {
       <section>
         <SectionTitle eyebrow="The road to the final" title="Knockout bracket" to="/bracket" cta="Full bracket" />
         <Reveal>
-          <KnockoutBracket />
+          <KnockoutBracket largeAs="rounds" />
         </Reveal>
       </section>
     </>

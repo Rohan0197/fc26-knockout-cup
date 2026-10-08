@@ -55,7 +55,7 @@ function Generator() {
     <div className="panel p-5 sm:p-6">
       <div className="eyebrow mb-1 !text-[0.72rem]">Step 1</div>
       <h2 className="display text-3xl text-white">Choose who's playing</h2>
-      <p className="mt-1 text-sm text-mute">A knockout bracket needs exactly 2, 4, 8 or 16 players.</p>
+      <p className="mt-1 text-sm text-mute">A knockout bracket needs exactly 2, 4, 8, 16, 32 or 64 players.</p>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {players.map((p) => {
@@ -109,7 +109,7 @@ function Generator() {
           >
             <Shuffle size={16} /> {draw ? 'Redraw' : 'Draw'}
           </button>
-          {!valid && n > 0 && <span className="text-sm text-warn">Select {n < 2 ? 2 : [2, 4, 8, 16].find((x) => x > n) ?? 16} players (or {[2, 4, 8, 16].filter((x) => x < n).pop() ?? 2}).</span>}
+          {!valid && n > 0 && <span className="text-sm text-warn">{n < 2 ? 'Select at least 2 players.' : `Select ${VALID_BRACKET_SIZES.find((x) => x > n) ?? 64} players${VALID_BRACKET_SIZES.filter((x) => x < n).length ? ` (or ${VALID_BRACKET_SIZES.filter((x) => x < n).pop()})` : ''}.`}</span>}
         </div>
 
         {draw && (

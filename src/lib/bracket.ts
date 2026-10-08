@@ -1,9 +1,11 @@
 import type { Match, Round } from '../types'
 
 /** Rounds in playing order. */
-export const ROUND_ORDER: Round[] = ['ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL']
+export const ROUND_ORDER: Round[] = ['ROUND_OF_64', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL']
 
 export const ROUND_LABEL: Record<Round, string> = {
+  ROUND_OF_64: 'Round of 64',
+  ROUND_OF_32: 'Round of 32',
   ROUND_OF_16: 'Round of 16',
   QUARTER_FINAL: 'Quarter Final',
   SEMI_FINAL: 'Semi Final',
@@ -28,10 +30,12 @@ export function advancementTarget(round: Round, matchNumber: number) {
   }
 }
 
-export const VALID_BRACKET_SIZES = [2, 4, 8, 16] as const
+export const VALID_BRACKET_SIZES = [2, 4, 8, 16, 32, 64] as const
 
 export function firstRoundFor(size: number): Round | null {
   switch (size) {
+    case 64: return 'ROUND_OF_64'
+    case 32: return 'ROUND_OF_32'
     case 16: return 'ROUND_OF_16'
     case 8: return 'QUARTER_FINAL'
     case 4: return 'SEMI_FINAL'

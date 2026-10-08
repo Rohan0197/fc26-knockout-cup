@@ -40,7 +40,8 @@ function StadiumBackgroundImpl() {
   const crowd = useCrowd()
   // Phones & reduced-motion users: no scroll-linked parallax (saves a JS update per scroll frame).
   const phone = useMediaQuery('(max-width: 767px)')
-  const still = phone || Boolean(useReducedMotion())
+  const reduced = useReducedMotion() // hooks must always run, never short-circuit them
+  const still = phone || Boolean(reduced)
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-ink-950 [contain:paint]">

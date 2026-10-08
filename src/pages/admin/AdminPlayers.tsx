@@ -162,7 +162,7 @@ export default function AdminPlayers() {
         <EmptyState
           icon={<Users size={26} />}
           title="No players yet"
-          message="Add the people taking part. You can build the bracket once you have 2, 4, 8 or 16 players."
+          message="Add the people taking part. You can build the bracket once you have 2, 4, 8, 16, 32 or 64 players."
           action={
             <button className="btn btn-primary" onClick={() => setEditing('new')}>
               <Plus size={16} /> Add first player

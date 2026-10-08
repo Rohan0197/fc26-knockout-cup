@@ -63,7 +63,7 @@ create unique index if not exists players_name_unique
 create table if not exists public.matches (
   id            uuid primary key default gen_random_uuid(),
   round         text not null
-                check (round in ('ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL')),
+                check (round in ('ROUND_OF_64', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL')),
   match_number  int  not null check (match_number > 0),
   player1_id    uuid references public.players (id) on delete set null,
   player2_id    uuid references public.players (id) on delete set null,
@@ -111,6 +111,8 @@ language sql
 immutable
 as $$
   select case r
+    when 'ROUND_OF_64'   then 'ROUND_OF_32'
+    when 'ROUND_OF_32'   then 'ROUND_OF_16'
     when 'ROUND_OF_16'   then 'QUARTER_FINAL'
     when 'QUARTER_FINAL' then 'SEMI_FINAL'
     when 'SEMI_FINAL'    then 'FINAL'
@@ -341,7 +343,7 @@ begin
 end;
 $$;
 
--- Build the whole empty bracket from an ordered list of players (2, 4, 8 or 16).
+-- Build the whole empty bracket from an ordered list of players (2, 4, 8, 16, 32 or 64).
 -- Pairs are (1,2), (3,4) ... ; later rounds are created empty and fill themselves in.
 create or replace function public.generate_bracket(p_player_ids uuid[])
 returns int
@@ -360,8 +362,8 @@ begin
   if exists (select 1 from public.matches) then
     raise exception 'Fixtures already exist. Reset the tournament before generating a new bracket.';
   end if;
-  if n not in (2, 4, 8, 16) then
-    raise exception 'A knockout bracket needs 2, 4, 8 or 16 players (got %).', n;
+  if n not in (2, 4, 8, 16, 32, 64) then
+    raise exception 'A knockout bracket needs 2, 4, 8, 16, 32 or 64 players (got %).', n;
   end if;
   if (select count(distinct x) from unnest(p_player_ids) as x) <> n then
     raise exception 'The same player appears more than once.';
@@ -372,7 +374,8 @@ begin
     raise exception 'Unknown player in list.';
   end if;
 
-  r := case n when 16 then 'ROUND_OF_16' when 8 then 'QUARTER_FINAL' when 4 then 'SEMI_FINAL' else 'FINAL' end;
+  r := case n when 64 then 'ROUND_OF_64' when 32 then 'ROUND_OF_32' when 16 then 'ROUND_OF_16'
+             when 8 then 'QUARTER_FINAL' when 4 then 'SEMI_FINAL' else 'FINAL' end;
   size := n / 2;
 
   while r is not null loop

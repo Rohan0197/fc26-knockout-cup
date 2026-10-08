@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { CalendarClock, ClipboardList } from 'lucide-react'
-import type { Match } from '../types'
+import type { Match, Round } from '../types'
 import { groupByRound, ROUND_LABEL } from '../lib/bracket'
 import { useMatches } from '../hooks/useMatches'
 import { MatchCard } from './MatchCard'
@@ -19,6 +19,7 @@ const matchesTab = (m: Match, tab: Tab) =>
 export function FixtureList() {
   const { matches, byId, loading } = useMatches()
   const [tab, setTab] = useState<Tab>('ALL')
+  const [roundPick, setRoundPick] = useState<Round | 'ALL'>('ALL')
 
   const counts = useMemo(
     () => ({
@@ -28,7 +29,11 @@ export function FixtureList() {
     }),
     [matches],
   )
-  const groups = useMemo(() => groupByRound(matches.filter((m) => matchesTab(m, tab))), [matches, tab])
+  const tabGroups = useMemo(() => groupByRound(matches.filter((m) => matchesTab(m, tab))), [matches, tab])
+  // A round filter only helps once there are many rounds (32 / 64-player brackets).
+  const allRounds = useMemo(() => groupByRound(matches).map((g) => g.round), [matches])
+  const roundFilter: Round | 'ALL' = roundPick !== 'ALL' && tabGroups.some((g) => g.round === roundPick) ? roundPick : 'ALL'
+  const groups = roundFilter === 'ALL' ? tabGroups : tabGroups.filter((g) => g.round === roundFilter)
 
   if (loading) return <MatchCardsSkeleton count={6} />
 
@@ -67,6 +72,28 @@ export function FixtureList() {
           </button>
         ))}
       </div>
+
+      {allRounds.length > 3 && (
+        <div className="hide-scrollbar -mt-3 mb-8 flex gap-2 overflow-x-auto" role="group" aria-label="Filter by round">
+          {(['ALL', ...allRounds] as const).map((r) => {
+            const on = roundFilter === r
+            const inTab = r === 'ALL' || tabGroups.some((g) => g.round === r)
+            return (
+              <button
+                key={r}
+                onClick={() => setRoundPick(r)}
+                aria-pressed={on}
+                disabled={!inTab}
+                className={`label shrink-0 px-3.5 py-2.5 text-[0.78rem] ring-1 ring-inset transition-colors disabled:opacity-35 ${
+                  on ? 'bg-pitch text-ink-950 ring-pitch' : 'bg-white/[0.04] text-soft ring-white/12 hover:text-white'
+                }`}
+              >
+                {r === 'ALL' ? 'All rounds' : ROUND_LABEL[r]}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {groups.length === 0 ? (
         tab === 'COMPLETED' ? (
