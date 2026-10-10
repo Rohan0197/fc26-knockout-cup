@@ -317,7 +317,7 @@ export function createDemoApi(): TournamentApi {
       if (isLegacy()) throw new Error('This needs the one-time database upgrade (migration 003) first.')
       mutate((s) => {
         const bracket = s.matches.filter((m) => m.round !== 'EXTRA')
-        if (bracket.length === 0) throw new Error('There are no fixtures yet. Use Generate bracket instead.')
+        if (bracket.length === 0) throw new Error('There are no fixtures yet. Add the first-round fixtures first.')
         const firstRound = ROUND_ORDER.find((r) => bracket.some((m) => m.round === r))!
         if (bracket.some((m) => m.round !== firstRound)) throw new Error('The bracket already has later rounds, so there is nothing to finish.')
         if (new Set(unplaced).size !== unplaced.length) throw new Error('The same player appears more than once.')

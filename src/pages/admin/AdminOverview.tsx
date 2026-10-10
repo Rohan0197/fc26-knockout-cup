@@ -32,7 +32,7 @@ export default function AdminOverview() {
 
   const steps = [
     { done: players.length > 0, label: 'Add the players', to: '/admin/players' },
-    { done: matches.length > 0, label: 'Generate the bracket (or add fixtures by hand)', to: '/admin/bracket' },
+    { done: matches.length > 0, label: 'Add the first-round fixtures', to: '/admin/fixtures' },
     { done: tournament.completed > 0, label: 'Enter match results as they finish', to: '/admin/results' },
   ]
 

@@ -32,8 +32,7 @@ exactly as it does today until you choose to upgrade the database.
    "destructive operations" warning because the script replaces its own rules and triggers; that is expected).
    It changes no players, fixtures, scores, winners, dates or standings, and your tournament **keeps automatic advancement**.
    It is safe to run twice.
-5. Reload the admin. The yellow notice disappears. If the bracket is still only its first round, **Admin → Bracket → Finish the bracket**
-   pairs the players who are not in a fixture yet and builds the remaining rounds around your existing fixtures and results.
+5. Reload the admin. The yellow notice disappears. Add the first-round fixtures and the later rounds' matches under **Fixtures** (players can stay TBD), and place who advances in **Admin → Bracket → Advance players**. There is no automatic draw.
 6. When you are happy, remove the spare copies: `drop table backup_players, backup_matches;`
 
 ## If something looks wrong
