@@ -32,6 +32,13 @@ export function AdvancePlayers() {
     return map
   }, [bracket])
 
+  // only players who have already played a match (a bracket match or an extra match) can be placed
+  const played = useMemo(() => {
+    const ids = new Set<string>()
+    for (const m of matches) if (m.status === 'COMPLETED') for (const id of [m.player1_id, m.player2_id]) if (id) ids.add(id)
+    return ids
+  }, [matches])
+
   const name = (id: string | null) => (id ? (byId.get(id)?.name ?? '?') : 'TBD')
 
   if (rounds.length === 0) return null
@@ -120,7 +127,7 @@ export function AdvancePlayers() {
                                 onChange={(e) => void place(m, slot, e.target.value)}
                               >
                                 <option value="">TBD</option>
-                                {players.map((p) => (
+                                {players.filter((p) => played.has(p.id) || p.id === value).map((p) => (
                                   <option key={p.id} value={p.id}>
                                     {p.name}
                                   </option>
