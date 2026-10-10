@@ -9,11 +9,23 @@
  */
 import type { AdminSession, Match, MatchInput, Player, PlayerInput, TournamentSettings } from '../types'
 import type { AuthApi, TournamentApi, TournamentData } from './queries'
-import { ROUND_LABEL, advancementTarget, buildBracketSkeleton } from './bracket'
+
+/** What the demo keeps in localStorage (schemaUpgraded is computed, never stored). */
+type StoredState = Omit<TournamentData, 'schemaUpgraded'>
+import { ROUND_LABEL, ROUND_ORDER, buildBracketSkeleton, planCompletion, resolveNext } from './bracket'
 import { normalizeName } from './calculations'
 
-const KEY = 'fc26-demo-state-v2'
+const KEY = 'fc26-demo-state-v3'
 const AUTH_KEY = 'fc26-demo-auth-v1'
+/** Set localStorage 'fc26-demo-legacy' = '1' to make the demo behave like a database that has not been upgraded yet (for testing). */
+const LEGACY_KEY = 'fc26-demo-legacy'
+const isLegacy = () => {
+  try {
+    return localStorage.getItem(LEGACY_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 export const DEMO_ADMIN = { email: 'demo@fc26.cup', password: 'demo1234' }
 
@@ -21,6 +33,7 @@ const DEFAULT_SETTINGS: TournamentSettings = {
   name: 'FC 26 Knockout Cup',
   subtitle: 'The Road to the Final',
   organizer: 'IT Committee, IIM Bodh Gaya',
+  advancement_mode: 'MANUAL',
 }
 
 const uid = () => crypto.randomUUID()
@@ -28,10 +41,10 @@ const nowIso = () => new Date().toISOString()
 
 /* ------------------------------------------------------------------ state persistence */
 
-function load(): TournamentData {
+function load(): StoredState {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as TournamentData
+    if (raw) return JSON.parse(raw) as StoredState
   } catch {
     /* fall through to reseed */
   }
@@ -40,7 +53,7 @@ function load(): TournamentData {
   return seeded
 }
 
-function save(state: TournamentData) {
+function save(state: StoredState) {
   try {
     localStorage.setItem(KEY, JSON.stringify(state))
   } catch {
@@ -50,7 +63,7 @@ function save(state: TournamentData) {
 
 /* ------------------------------------------------------------------ rules (mirror of SQL) */
 
-function applyMatchWrite(state: TournamentData, next: Match, prev: Match | null) {
+function applyMatchWrite(state: StoredState, next: Match, prev: Match | null) {
   if (
     prev?.status === 'COMPLETED' &&
     next.status === 'COMPLETED' &&
@@ -83,10 +96,12 @@ function applyMatchWrite(state: TournamentData, next: Match, prev: Match | null)
   if (clash) throw new Error('A match with that round and match number already exists.')
 
   // Advancement: only when the winner actually changed.
+  // extra matches never advance anyone, and in MANUAL mode the admin places every player by hand
+  const auto = state.settings.advancement_mode === 'AUTO' && next.round !== 'EXTRA'
   const winnerChanged = (prev?.winner_id ?? null) !== next.winner_id
-  const target = winnerChanged ? advancementTarget(next.round, next.match_number) : null
+  const target = auto && winnerChanged ? resolveNext(next, state.matches) : null
   if (target) {
-    const tm = state.matches.find((m) => m.round === target.round && m.match_number === target.match_number)
+    const tm = target.match
     if (tm) {
       const key = target.slot === 1 ? 'player1_id' : 'player2_id'
       if (tm[key] !== next.winner_id) {
@@ -117,13 +132,33 @@ function blankMatch(partial: Partial<Match> & Pick<Match, 'round' | 'match_numbe
     scheduled_at: null,
     completed_at: null,
     created_at: nowIso(),
+    next_match_id: null,
+    next_slot: null,
     ...partial,
   }
 }
 
+/** Real matches (with ids and winner links) for an ordered player list - the same structure generate_bracket() builds in SQL. */
+function bracketMatches(playerIds: string[], schedule?: (string | null)[]): Match[] {
+  const skeleton = buildBracketSkeleton(playerIds)
+  const idByKey = new Map(skeleton.map((sk) => [sk.key, uid()]))
+  return skeleton.map((sk, i) =>
+    blankMatch({
+      id: idByKey.get(sk.key)!,
+      round: sk.round,
+      match_number: sk.match_number,
+      player1_id: sk.player1_id,
+      player2_id: sk.player2_id,
+      next_match_id: sk.nextKey ? idByKey.get(sk.nextKey)! : null,
+      next_slot: sk.nextSlot,
+      scheduled_at: schedule?.[i] ?? null,
+    }),
+  )
+}
+
 /* ------------------------------------------------------------------ demo seed */
 
-function seed(): TournamentData {
+function seed(): StoredState {
   const names: [string, string, string][] = [
     ['Rohan Dongre', 'ROHAN', 'Real Madrid'],
     ['Player 02', 'P02', 'Manchester City'],
@@ -142,7 +177,8 @@ function seed(): TournamentData {
     avatar_url: null,
     created_at: new Date(Date.now() - (names.length - i) * 1000).toISOString(),
   }))
-  const state: TournamentData = { players, matches: [], settings: { ...DEFAULT_SETTINGS } }
+  // the sample plays its first results with automatic advancement, then hands control to the admin like production
+  const state: StoredState = { players, matches: [], settings: { ...DEFAULT_SETTINGS, advancement_mode: 'AUTO' } }
 
   const at = (days: number, hour: number) => {
     const d = new Date()
@@ -151,9 +187,7 @@ function seed(): TournamentData {
     return d.toISOString()
   }
   const slots = [at(-1, 18), at(-1, 19), at(1, 18), at(1, 19), at(3, 19), at(3, 20), at(5, 20)]
-  buildBracketSkeleton(players.map((p) => p.id)).forEach((s, i) => {
-    state.matches.push(blankMatch({ ...s, scheduled_at: slots[i] }))
-  })
+  state.matches.push(...bracketMatches(players.map((p) => p.id), slots))
 
   const result = (round: Match['round'], n: number, a: number, b: number) => {
     const m = state.matches.find((x) => x.round === round && x.match_number === n)!
@@ -161,6 +195,7 @@ function seed(): TournamentData {
   }
   result('QUARTER_FINAL', 1, 3, 1)
   result('QUARTER_FINAL', 2, 1, 2)
+  state.settings.advancement_mode = DEFAULT_SETTINGS.advancement_mode
   return state
 }
 
@@ -175,14 +210,14 @@ export function createDemoApi(): TournamentApi {
     if (e.key === KEY) emit()
   })
 
-  const mutate = (fn: (s: TournamentData) => void) => {
+  const mutate = (fn: (s: StoredState) => void) => {
     const state = structuredClone(load())
     fn(state) // throws on rule violations -> nothing is saved
     save(state)
     emit()
   }
 
-  const assertUniqueName = (state: TournamentData, name: string, exceptId?: string) => {
+  const assertUniqueName = (state: StoredState, name: string, exceptId?: string) => {
     if (state.players.some((p) => p.id !== exceptId && normalizeName(p.name) === normalizeName(name)))
       throw new Error('A player with that name already exists.')
   }
@@ -190,7 +225,9 @@ export function createDemoApi(): TournamentApi {
   return {
     mode: 'demo',
     async fetchAll() {
-      return structuredClone(load())
+      const data = structuredClone(load())
+      if (isLegacy()) data.settings.advancement_mode = 'AUTO' // an old database always advances winners itself
+      return { ...data, schemaUpgraded: !isLegacy() }
     },
     subscribe(onChange) {
       listeners.add(onChange)
@@ -226,6 +263,16 @@ export function createDemoApi(): TournamentApi {
     async createMatch(input: MatchInput) {
       mutate((s) => applyMatchWrite(s, blankMatch(input), null))
     },
+    async createExtraMatch(player1Id, player2Id, scheduledAt) {
+      if (isLegacy()) throw new Error('This needs the one-time database upgrade (migration 003) first.')
+      mutate((s) => {
+        if (!player1Id || !player2Id) throw new Error('Choose both players.')
+        if (player1Id === player2Id) throw new Error('A player cannot play themselves.')
+        if (!s.players.some((p) => p.id === player1Id) || !s.players.some((p) => p.id === player2Id)) throw new Error('Unknown player.')
+        const next = Math.max(0, ...s.matches.filter((m) => m.round === 'EXTRA').map((m) => m.match_number)) + 1
+        s.matches.push(blankMatch({ round: 'EXTRA', match_number: next, player1_id: player1Id, player2_id: player2Id, scheduled_at: scheduledAt }))
+      })
+    },
     async updateMatch(id, patch) {
       mutate((s) => {
         const prev = s.matches.find((m) => m.id === id)
@@ -238,6 +285,8 @@ export function createDemoApi(): TournamentApi {
         const m = s.matches.find((x) => x.id === id)
         if (m?.status === 'COMPLETED')
           throw new Error('Completed matches cannot be deleted. Correct the result, or reset the whole tournament.')
+        if (s.matches.some((x) => x.next_match_id === id))
+          throw new Error("Other matches in the bracket feed into this one, so it can't be deleted. Reset the tournament to rebuild the bracket.")
         s.matches = s.matches.filter((x) => x.id !== id)
       })
     },
@@ -255,11 +304,63 @@ export function createDemoApi(): TournamentApi {
     },
 
     async generateBracket(ids) {
+      if (isLegacy() && ![2, 4, 8, 16, 32, 64].includes(ids.length))
+        throw new Error(`A knockout bracket needs 2, 4, 8, 16, 32 or 64 players (got ${ids.length}).`)
       mutate((s) => {
-        if (s.matches.length > 0)
+        if (s.matches.some((m) => m.round !== 'EXTRA'))
           throw new Error('Fixtures already exist. Reset the tournament before generating a new bracket.')
         if (new Set(ids).size !== ids.length) throw new Error('The same player appears more than once.')
-        buildBracketSkeleton(ids).forEach((sk) => s.matches.push(blankMatch(sk)))
+        s.matches.push(...bracketMatches(ids))
+      })
+    },
+    async completeBracket(unplaced) {
+      if (isLegacy()) throw new Error('This needs the one-time database upgrade (migration 003) first.')
+      mutate((s) => {
+        const bracket = s.matches.filter((m) => m.round !== 'EXTRA')
+        if (bracket.length === 0) throw new Error('There are no fixtures yet. Use Generate bracket instead.')
+        const firstRound = ROUND_ORDER.find((r) => bracket.some((m) => m.round === r))!
+        if (bracket.some((m) => m.round !== firstRound)) throw new Error('The bracket already has later rounds, so there is nothing to finish.')
+        if (new Set(unplaced).size !== unplaced.length) throw new Error('The same player appears more than once.')
+        if (unplaced.some((id) => !s.players.some((p) => p.id === id))) throw new Error('Unknown player in list.')
+        if (bracket.some((m) => unplaced.includes(m.player1_id ?? '') || unplaced.includes(m.player2_id ?? '')))
+          throw new Error('One of those players is already in a fixture.')
+
+        const existing = bracket.filter((m) => m.round === firstRound)
+        const plan = planCompletion(existing, unplaced) // throws a readable error when the numbers do not fit
+
+        // 1) new first-round fixtures for the unpaired players; 2) the later rounds; 3) the winner-goes-to links
+        const idByKey = new Map<string, string>()
+        for (const pair of plan.newPairs) {
+          const m = blankMatch({ round: firstRound, match_number: pair.match_number, player1_id: pair.player1_id, player2_id: pair.player2_id })
+          idByKey.set(`new:${pair.match_number}`, m.id)
+          s.matches.push(m)
+        }
+        plan.later.forEach((m) => idByKey.set(m.key, uid()))
+        for (const m of plan.later)
+          s.matches.push(
+            blankMatch({
+              id: idByKey.get(m.key)!,
+              round: m.round,
+              match_number: m.match_number,
+              player1_id: m.player1_id,
+              player2_id: m.player2_id,
+              next_match_id: m.nextKey ? idByKey.get(m.nextKey)! : null,
+              next_slot: m.nextSlot,
+            }),
+          )
+        for (const l of plan.firstLinks) {
+          const from = s.matches.find((m) => (l.id ? m.id === l.id : m.id === idByKey.get(l.key!)))!
+          from.next_match_id = idByKey.get(l.nextKey)!
+          from.next_slot = l.nextSlot
+        }
+        // automatic mode: winners that are already decided go straight into their next-round slot
+        if (s.settings.advancement_mode === 'AUTO') {
+          for (const m of s.matches.filter((x) => x.round === firstRound && x.winner_id && x.next_match_id)) {
+            const t = s.matches.find((x) => x.id === m.next_match_id)!
+            if (m.next_slot === 1) t.player1_id = m.winner_id
+            else t.player2_id = m.winner_id
+          }
+        }
       })
     },
     async resetTournament() {
@@ -270,7 +371,8 @@ export function createDemoApi(): TournamentApi {
 
     async updateSettings(settings) {
       mutate((s) => {
-        s.settings = { ...settings }
+        // an un-upgraded database has no advancement_mode column, so it is never written
+        s.settings = isLegacy() ? { ...settings, advancement_mode: s.settings.advancement_mode } : { ...settings }
       })
     },
   }

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, ClipboardCheck, Pencil, Trophy } from 'lucide-react'
 import type { Match, Player } from '../../types'
 import { backend } from '../../lib/api'
-import { ROUND_LABEL, advancementTarget, compareMatches } from '../../lib/bracket'
+import { ROUND_LABEL, compareMatches, resolveNext } from '../../lib/bracket'
 import { useTournament } from '../../context/TournamentContext'
 import { useAdminAction } from '../../hooks/useAdminAction'
 import { fmtKickoff, pad2 } from '../../utils/format'
@@ -16,7 +16,7 @@ const api = backend!.api
 const SCORE = /^\d{1,2}$/
 
 function ResultModal({ match, p1, p2, onClose }: { match: Match; p1: Player; p2: Player; onClose: () => void }) {
-  const { matches } = useTournament()
+  const { matches, settings } = useTournament()
   const run = useAdminAction()
   const correcting = match.status === 'COMPLETED'
   const [a, setA] = useState(match.player1_score?.toString() ?? '')
@@ -40,8 +40,10 @@ function ResultModal({ match, p1, p2, onClose }: { match: Match; p1: Player; p2:
   const winnerChanges = Boolean(correcting && winner && winner.id !== previousWinnerId)
 
   // Mirror the database rule: a winner can't change once the next match has been played.
-  const target = advancementTarget(match.round, match.match_number)
-  const nextMatch = target ? matches.find((m) => m.round === target.round && m.match_number === target.match_number) : undefined
+  // Only AUTO mode moves winners (never for extra matches), so only then can a correction be blocked or re-routed.
+  const auto = settings.advancement_mode === 'AUTO' && match.round !== 'EXTRA'
+  const nextMatch = auto ? resolveNext(match, matches)?.match : undefined // follows the real link, including byes that skip a round
+  const target = nextMatch ? { round: nextMatch.round, match_number: nextMatch.match_number } : null
   const blockedByNext = Boolean(winnerChanges && nextMatch?.status === 'COMPLETED')
 
   const submit = async () => {
@@ -117,8 +119,8 @@ function ResultModal({ match, p1, p2, onClose }: { match: Match; p1: Player; p2:
           </div>
           {winnerChanges && winner ? (
             <p className="border-l-2 border-warn bg-warn/10 px-3 py-2 text-warn">
-              The winner changes to <strong>{winner.name}</strong>. Wins, losses, points and the bracket will all be recalculated
-              {target ? <> and {winner.name} will replace the previous winner in {ROUND_LABEL[target.round]} match {target.match_number}.</> : '.'}
+              The winner changes to <strong>{winner.name}</strong>. Wins, losses and points will be recalculated
+              {target ? <> and {winner.name} will replace the previous winner in {ROUND_LABEL[target.round]} match {target.match_number}.</> : match.round === 'EXTRA' ? '.' : <>. The bracket is not changed automatically: adjust it under Bracket → Advance players if needed.</>}
             </p>
           ) : (
             <p>The winner stays the same — standings keep their wins/losses, only the score changes.</p>
@@ -163,7 +165,9 @@ function ResultModal({ match, p1, p2, onClose }: { match: Match; p1: Player; p2:
                       Advances to <strong className="text-white">{ROUND_LABEL[target.round]}</strong> <ArrowRight size={12} className="inline" /> match {target.match_number}.
                     </>
                   )}
-                  {!target && ' This decides the tournament.'}
+                  {match.round === 'EXTRA' && ' Extra match: it counts in the standings and does not change the bracket.'}
+                  {match.round !== 'EXTRA' && !auto && ' You decide who goes to the next round (Bracket → Advance players).'}
+                  {auto && !target && match.round === 'FINAL' && ' This decides the tournament.'}
                 </span>
               </div>
             ) : (

@@ -6,12 +6,14 @@ import { useAuth } from '../../context/AuthContext'
 import { useTournament } from '../../context/TournamentContext'
 import { useAdminAction } from '../../hooks/useAdminAction'
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
+import { AdvancementModeSwitch } from '../../components/admin/AdvancementModeSwitch'
+import { UpgradeNotice } from '../../components/admin/UpgradeNotice'
 import { Field } from '../../components/admin/Field'
 
 const api = backend!.api
 
 export default function AdminSettings() {
-  const { settings, mode, refresh } = useTournament()
+  const { settings, mode, refresh, schemaReady } = useTournament()
   const { session } = useAuth()
   const run = useAdminAction()
   const [name, setName] = useState(settings.name)
@@ -33,7 +35,7 @@ export default function AdminSettings() {
     setTouched(true)
     if (!name.trim()) return
     setBusy(true)
-    await run(() => api.updateSettings({ name: name.trim(), subtitle: subtitle.trim(), organizer: organizer.trim() }), 'Settings saved.')
+    await run(() => api.updateSettings({ ...settings, name: name.trim(), subtitle: subtitle.trim(), organizer: organizer.trim() }), 'Settings saved.')
     setBusy(false)
   }
 
@@ -55,6 +57,18 @@ export default function AdminSettings() {
           {busy ? 'Saving…' : 'Save settings'}
         </button>
       </div>
+
+      {schemaReady ? (
+        <div className="panel mt-6 max-w-2xl p-5 sm:p-6">
+          <h2 className="display text-2xl text-white">Who goes to the next round?</h2>
+          <p className="mb-4 mt-1 text-sm text-mute">You can change this at any time, even mid-tournament. Players already placed stay where they are.</p>
+          <AdvancementModeSwitch />
+        </div>
+      ) : (
+        <div className="mt-6 max-w-2xl">
+          <UpgradeNotice feature="Choosing who goes to the next round" />
+        </div>
+      )}
 
       <div className="panel mt-6 max-w-2xl p-5 sm:p-6">
         <h2 className="display text-2xl text-white">Account</h2>

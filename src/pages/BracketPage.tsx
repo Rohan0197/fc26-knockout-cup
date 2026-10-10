@@ -5,7 +5,7 @@ export default function BracketPage() {
   return (
     <>
       <PageHeader eyebrow="The road to the final" title="Knockout bracket">
-        Winners advance automatically. Lit paths show who has already gone through.
+        Green lines mark finished matches. The organisers decide who goes through to each next round.
       </PageHeader>
       <KnockoutBracket />
     </>

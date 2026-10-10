@@ -32,8 +32,12 @@ insert into public.matches (round, match_number, player1_id, player2_id, schedul
   ('FINAL',         1, null, null, now() + interval '6 days')
 on conflict (round, match_number) do nothing;
 
--- Results: the triggers derive the winner and advance them to the semi-finals.
+-- Results: the triggers derive the winner and advance them to the semi-finals (automatic mode for the sample,
+-- then back to MANUAL, the normal setting where the admin decides who goes to the next round).
+update public.tournament_settings set advancement_mode = 'AUTO' where id = 1;
 update public.matches set player1_score = 3, player2_score = 1, status = 'COMPLETED'
  where round = 'QUARTER_FINAL' and match_number = 1;
 update public.matches set player1_score = 1, player2_score = 2, status = 'COMPLETED'
  where round = 'QUARTER_FINAL' and match_number = 2;
+
+update public.tournament_settings set advancement_mode = 'MANUAL' where id = 1;

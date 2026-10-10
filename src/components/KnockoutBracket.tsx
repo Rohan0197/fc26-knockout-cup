@@ -1,8 +1,8 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Crown, GitBranch, LayoutList } from 'lucide-react'
 import type { Match, Player, Round } from '../types'
-import { ROUND_LABEL } from '../lib/bracket'
+import { ROUND_LABEL, resolveNext } from '../lib/bracket'
 import { useMatches } from '../hooks/useMatches'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { fmtKickoff, pad2 } from '../utils/format'
@@ -16,6 +16,7 @@ const GAP = 44
 /** Vertical room per first-round match. Tighter for big brackets so a 64-player tree stays manageable. */
 const slotHeightFor = (firstRoundMatches: number) => (firstRoundMatches > 8 ? 104 : 120)
 const HEADER_H = 52
+const BOX_H = 93 // 22 header + 2 x 34 rows + divider + border
 const CHAMP_W = 196
 
 /* ------------------------------------------------------------------ one match in the tree */
@@ -75,129 +76,175 @@ const BracketMatch = memo(function BracketMatch({ match, byId }: { match: Match;
   )
 })
 
-/* ------------------------------------------------------------------ connector lines */
-
-function Line({ lit, style, axis, origin, delay }: { lit: boolean; style: React.CSSProperties; axis: 'x' | 'y'; origin: string; delay: number }) {
-  return (
-    <motion.span
-      aria-hidden
-      className={`absolute ${axis === 'x' ? 'h-px' : 'w-px'} ${lit ? 'bg-pitch shadow-[0_0_8px_rgba(43,255,136,0.7)]' : 'bg-white/[0.16]'}`}
-      style={{ ...style, transformOrigin: origin }}
-      initial={axis === 'x' ? { scaleX: 0 } : { scaleY: 0 }}
-      animate={axis === 'x' ? { scaleX: 1 } : { scaleY: 1 }}
-      transition={{ duration: 0.45, delay, ease: 'easeOut' }}
-    />
-  )
-}
-
-function Slot({ match, byId, outWidth, lit, delay, slotH }: { match: Match; byId: Map<string, Player>; outWidth: number | null; lit: boolean; delay: number; slotH: number }) {
-  return (
-    <div className="relative flex flex-1 items-center" style={{ minHeight: slotH }}>
-      <BracketMatch match={match} byId={byId} />
-      {outWidth !== null && (
-        <Line lit={lit} axis="x" origin="left" delay={delay} style={{ left: '100%', top: '50%', width: outWidth }} />
-      )}
-    </div>
-  )
-}
-
 /* ------------------------------------------------------------------ the tree */
 
-function Tree({ rounds, byId, currentRound }: { rounds: { round: Round; matches: Match[] }[]; byId: Map<string, Player>; currentRound: Round | null }) {
-  const slotH = slotHeightFor(Math.max(...rounds.map((r) => r.matches.length)))
-  const bodyH = Math.max(...rounds.map((r) => r.matches.length)) * slotH
+interface TreeLayout {
+  pos: Map<string, { col: number; y: number }>
+  links: { from: Match; to: Match; col1: number; col2: number; y1: number; y2: number }[]
+  bodyH: number
+  byes: number[]
+  finalY: number | null
+}
+
+/**
+ * Positions every match from the matches that feed it (a match sits at the average height of its feeders), so
+ * rounds with an odd number of matches and byes that skip a round lay out correctly. First-round matches are
+ * simply stacked evenly.
+ */
+function layoutTree(rounds: { round: Round; matches: Match[] }[], all: Match[], slotH: number): TreeLayout {
+  const inTree = new Set(rounds.flatMap((r) => r.matches.map((m) => m.id)))
+  const colOf = new Map<string, number>()
+  rounds.forEach((r, ci) => r.matches.forEach((m) => colOf.set(m.id, ci)))
+
+  const feeders = new Map<string, Match[]>()
+  const links: TreeLayout['links'] = []
+  const resolved: { from: Match; to: Match }[] = []
+  for (const r of rounds)
+    for (const m of r.matches) {
+      const nx = resolveNext(m, all)
+      if (nx?.match && inTree.has(nx.match.id)) {
+        resolved.push({ from: m, to: nx.match })
+        feeders.set(nx.match.id, [...(feeders.get(nx.match.id) ?? []), m])
+      }
+    }
+
+  const pos = new Map<string, { col: number; y: number }>()
+  const minGap = BOX_H + 14
+  rounds.forEach((r, ci) => {
+    let free = 0
+    const ys = r.matches.map((m) => {
+      const fs = (feeders.get(m.id) ?? []).filter((f) => pos.has(f.id))
+      if (fs.length > 0) return fs.reduce((sum, f) => sum + pos.get(f.id)!.y, 0) / fs.length
+      return free++ * slotH + slotH / 2
+    })
+    for (let i = 1; i < ys.length; i++) if (ys[i] < ys[i - 1] + minGap) ys[i] = ys[i - 1] + minGap
+    r.matches.forEach((m, i) => pos.set(m.id, { col: ci, y: ys[i] }))
+  })
+
+  let bodyH = 0
+  pos.forEach((p) => (bodyH = Math.max(bodyH, p.y + BOX_H / 2 + 12)))
+
+  const byes = rounds.map(() => 0)
+  for (const { from, to } of resolved) {
+    const c1 = colOf.get(from.id)!
+    const c2 = colOf.get(to.id)!
+    for (let c = c1 + 1; c < c2; c++) byes[c]++
+    links.push({ from, to, col1: c1, col2: c2, y1: pos.get(from.id)!.y, y2: pos.get(to.id)!.y })
+  }
   const last = rounds[rounds.length - 1]
-  const finalDone = last.round === 'FINAL' && last.matches[0]?.status === 'COMPLETED'
-  const champion = finalDone ? (byId.get(last.matches[0].winner_id ?? '') ?? null) : null
+  const fin = last.round === 'FINAL' ? last.matches[0] : undefined
+  return { pos, links, bodyH, byes, finalY: fin ? pos.get(fin.id)!.y : null }
+}
+
+function Tree({
+  rounds,
+  all,
+  byId,
+  currentRound,
+}: {
+  rounds: { round: Round; matches: Match[] }[]
+  all: Match[]
+  byId: Map<string, Player>
+  currentRound: Round | null
+}) {
+  const slotH = slotHeightFor(Math.max(...rounds.map((r) => r.matches.length)))
+  const layout = useMemo(() => layoutTree(rounds, all, slotH), [rounds, all, slotH])
+  const colX = (c: number) => c * (BOX_W + GAP)
+  const last = rounds[rounds.length - 1]
   const showChampion = last.round === 'FINAL'
+  const finalMatch = showChampion ? last.matches[0] : undefined
+  const champion = finalMatch?.status === 'COMPLETED' ? (byId.get(finalMatch.winner_id ?? '') ?? null) : null
+  const totalW = colX(rounds.length) + (showChampion ? CHAMP_W : -GAP)
+
+  const pathFor = (l: TreeLayout['links'][number]) => {
+    const x1 = colX(l.col1) + BOX_W
+    const x2 = colX(l.col2)
+    const xm = x2 - GAP / 2 // vertical run sits in the gap just before the target column
+    return `M ${x1} ${l.y1} H ${xm} V ${l.y2} H ${x2}`
+  }
+  const dim = layout.links.filter((l) => l.from.status !== 'COMPLETED')
+  const lit = layout.links.filter((l) => l.from.status === 'COMPLETED')
+  const finalLink =
+    showChampion && layout.finalY !== null ? `M ${colX(rounds.length - 1) + BOX_W} ${layout.finalY} H ${colX(rounds.length)}` : null
 
   return (
-    <div className="flex" style={{ gap: GAP }}>
+    <div className="relative" style={{ width: totalW, height: HEADER_H + layout.bodyH }}>
       {rounds.map((r, ci) => {
-        const hasNext = ci < rounds.length - 1
-        const isLast = !hasNext
-        const delay = 0.25 + ci * 0.2
         const played = r.matches.filter((m) => m.status === 'COMPLETED').length
         const isCurrent = r.round === currentRound
-        const pairs: Match[][] = []
-        if (hasNext && r.matches.length % 2 === 0) {
-          for (let i = 0; i < r.matches.length; i += 2) pairs.push([r.matches[i], r.matches[i + 1]])
-        }
-
         return (
-          <div key={r.round} className="flex shrink-0 flex-col" style={{ width: BOX_W }}>
-            <div className="flex flex-col justify-center" style={{ height: HEADER_H }}>
-              <div className="flex items-center gap-2">
-                <span className={`display text-[1.55rem] ${isCurrent ? 'text-white' : 'text-soft'}`}>{ROUND_LABEL[r.round]}</span>
-                {isCurrent && <span className="live-dot" title="Current round" />}
-              </div>
-              <div className="label text-[0.66rem] text-mute">
-                {played}/{r.matches.length} played
-              </div>
+          <div key={r.round} className="absolute flex flex-col justify-center" style={{ left: colX(ci), top: 0, width: BOX_W, height: HEADER_H }}>
+            <div className="flex items-center gap-2">
+              <span className={`display text-[1.55rem] ${isCurrent ? 'text-white' : 'text-soft'}`}>{ROUND_LABEL[r.round]}</span>
+              {isCurrent && <span className="live-dot" title="Current round" />}
             </div>
-
-            <div className="flex flex-col" style={{ height: bodyH }}>
-              {pairs.length > 0
-                ? pairs.map(([a, b]) => (
-                    <div key={a.id} className="relative flex flex-1 flex-col">
-                      <Slot match={a} byId={byId} outWidth={GAP / 2} lit={a.status === 'COMPLETED'} delay={delay} slotH={slotH} />
-                      <Slot match={b} byId={byId} outWidth={GAP / 2} lit={b.status === 'COMPLETED'} delay={delay} slotH={slotH} />
-                      <Line axis="y" origin="top" lit={a.status === 'COMPLETED'} delay={delay + 0.2} style={{ left: `calc(100% + ${GAP / 2}px)`, top: '25%', height: '25%' }} />
-                      <Line axis="y" origin="bottom" lit={b.status === 'COMPLETED'} delay={delay + 0.2} style={{ left: `calc(100% + ${GAP / 2}px)`, top: '50%', height: '25%' }} />
-                      <Line axis="x" origin="left" lit={a.status === 'COMPLETED' && b.status === 'COMPLETED'} delay={delay + 0.4} style={{ left: `calc(100% + ${GAP / 2}px)`, top: '50%', width: GAP / 2 }} />
-                    </div>
-                  ))
-                : r.matches.map((m) => (
-                    <Slot
-                      key={m.id}
-                      match={m}
-                      byId={byId}
-                      outWidth={isLast && showChampion ? GAP : null}
-                      lit={m.status === 'COMPLETED'}
-                      delay={delay}
-                      slotH={slotH}
-                    />
-                  ))}
+            <div className="label text-[0.66rem] text-mute">
+              {played}/{r.matches.length} played
+              {layout.byes[ci] > 0 && <span className="text-warn"> · {layout.byes[ci]} bye</span>}
             </div>
           </div>
         )
       })}
-
       {showChampion && (
-        <div className="flex shrink-0 flex-col" style={{ width: CHAMP_W }}>
-          <div className="flex flex-col justify-center" style={{ height: HEADER_H }}>
-            <span className="display text-[1.55rem] text-gold">Champion</span>
-          </div>
-          <div className="flex items-center" style={{ height: bodyH }}>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.25 + rounds.length * 0.2, duration: 0.5 }}
-              className={`panel panel-both w-full p-4 text-center ${champion ? '!border-gold/50' : ''}`}
-              style={champion ? { background: 'linear-gradient(180deg, rgba(230,195,106,0.16), rgba(10,13,18,0.85))' } : undefined}
-            >
-              <Crown size={22} className={`mx-auto ${champion ? 'text-gold' : 'text-mute/50'}`} />
-              {champion ? (
-                <>
-                  <div className="mx-auto mt-3 w-fit"><PlayerAvatar player={champion} size={56} /></div>
-                  <div className="display mt-3 text-2xl text-white">{champion.name}</div>
-                  <div className="label mt-1 text-[0.66rem] text-gold">Tournament winner</div>
-                </>
-              ) : (
-                <>
-                  <div className="display mt-3 text-2xl text-mute/70">TBD</div>
-                  <div className="label mt-1 text-[0.66rem] text-mute">To be decided</div>
-                </>
-              )}
-            </motion.div>
-          </div>
+        <div className="absolute flex flex-col justify-center" style={{ left: colX(rounds.length), top: 0, width: CHAMP_W, height: HEADER_H }}>
+          <span className="display text-[1.55rem] text-gold">Champion</span>
+        </div>
+      )}
+
+      <svg className="absolute left-0" style={{ top: HEADER_H }} width={totalW} height={layout.bodyH} aria-hidden>
+        <g fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth={1.5}>
+          {dim.map((l, i) => (
+            <motion.path key={l.from.id} d={pathFor(l)} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.6, delay: 0.2 + l.col1 * 0.15 + (i % 5) * 0.01, ease: 'easeOut' }} />
+          ))}
+          {finalLink && finalMatch?.status !== 'COMPLETED' && <path d={finalLink} />}
+        </g>
+        <g fill="none" stroke="#2bff88" strokeWidth={1.6} style={{ filter: 'drop-shadow(0 0 4px rgba(43,255,136,0.7))' }}>
+          {lit.map((l, i) => (
+            <motion.path key={l.from.id} d={pathFor(l)} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.6, delay: 0.2 + l.col1 * 0.15 + (i % 5) * 0.01, ease: 'easeOut' }} />
+          ))}
+          {finalLink && finalMatch?.status === 'COMPLETED' && <path d={finalLink} />}
+        </g>
+      </svg>
+
+      {rounds.map((r) =>
+        r.matches.map((m) => {
+          const p = layout.pos.get(m.id)!
+          return (
+            <div key={m.id} className="absolute" style={{ left: colX(p.col), top: HEADER_H + p.y - BOX_H / 2, width: BOX_W, height: BOX_H }}>
+              <BracketMatch match={m} byId={byId} />
+            </div>
+          )
+        }),
+      )}
+
+      {showChampion && layout.finalY !== null && (
+        <div className="absolute" style={{ left: colX(rounds.length), top: HEADER_H + layout.finalY - 70, width: CHAMP_W }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.25 + rounds.length * 0.2, duration: 0.5 }}
+            className={`panel panel-both w-full p-4 text-center ${champion ? '!border-gold/50' : ''}`}
+            style={champion ? { background: 'linear-gradient(180deg, rgba(230,195,106,0.16), rgba(10,13,18,0.85))' } : undefined}
+          >
+            <Crown size={22} className={`mx-auto ${champion ? 'text-gold' : 'text-mute/50'}`} />
+            {champion ? (
+              <>
+                <div className="mx-auto mt-3 w-fit"><PlayerAvatar player={champion} size={56} /></div>
+                <div className="display mt-3 text-2xl text-white">{champion.name}</div>
+                <div className="label mt-1 text-[0.66rem] text-gold">Tournament winner</div>
+              </>
+            ) : (
+              <>
+                <div className="display mt-3 text-2xl text-mute/70">TBD</div>
+                <div className="label mt-1 text-[0.66rem] text-mute">To be decided</div>
+              </>
+            )}
+          </motion.div>
         </div>
       )}
     </div>
   )
 }
-
-/* ------------------------------------------------------------------ public component */
 
 type RoundGroup = { round: Round; matches: Match[] }
 
@@ -270,7 +317,7 @@ export function KnockoutBracket({ largeAs = 'tree' }: BracketProps) {
 
   if (loading) return <BracketSkeleton />
 
-  if (matches.length === 0) {
+  if (rounds.length === 0) {
     return (
       <EmptyState
         icon={<GitBranch size={26} />}
@@ -318,7 +365,7 @@ export function KnockoutBracket({ largeAs = 'tree' }: BracketProps) {
       {showTree ? (
         <div ref={scroller} className="panel overflow-x-auto overscroll-x-contain p-6">
           <div className="mx-auto w-max">
-            <Tree rounds={rounds} byId={byId} currentRound={tournament.currentRound} />
+            <Tree rounds={rounds} all={matches} byId={byId} currentRound={tournament.currentRound} />
           </div>
         </div>
       ) : (

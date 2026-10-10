@@ -12,6 +12,11 @@ export interface TournamentData {
   players: Player[]
   matches: Match[]
   settings: TournamentSettings
+  /**
+   * false while the database has not had migration 003 yet. Every feature that needs it switches itself off, so the site
+   * keeps working exactly as before on an un-upgraded database.
+   */
+  schemaUpgraded: boolean
 }
 
 /** Everything the UI needs from a backend. Implemented by Supabase (real) and the local demo store. */
@@ -24,11 +29,15 @@ export interface TournamentApi {
   updatePlayer(id: string, input: PlayerInput): Promise<void>
   deletePlayer(id: string): Promise<void>
   createMatch(input: MatchInput): Promise<void>
+  /** An extra match between any two players (rematches etc.); numbered automatically. Unlimited. */
+  createExtraMatch(player1Id: string, player2Id: string, scheduledAt: string | null): Promise<void>
   updateMatch(id: string, patch: Partial<MatchInput>): Promise<void>
   deleteMatch(id: string): Promise<void>
   /** Enter or correct a result. The database derives the winner and advances the bracket. */
   submitResult(matchId: string, score1: number, score2: number): Promise<void>
   generateBracket(orderedPlayerIds: string[]): Promise<void>
+  /** Finish a bracket around first-round fixtures that already exist; pairs the given unplaced players. Nothing existing is changed. */
+  completeBracket(unplacedPlayerIds: string[]): Promise<void>
   resetTournament(): Promise<void>
   updateSettings(settings: TournamentSettings): Promise<void>
 }
@@ -54,6 +63,8 @@ function throwIfError(error: DbError): void {
       throw new Error('A match with that round and match number already exists.')
     throw new Error('That record already exists.')
   }
+  if (error.code === '23503' && /next_match_id/.test(error.message))
+    throw new Error("Other matches in the bracket feed into this one, so it can't be deleted. Reset the tournament to rebuild the bracket.")
   if (/permission denied/i.test(error.message))
     throw new Error(
       'The database refused access (permission denied). Run section 8b "Data API privileges" of supabase/schema.sql in the Supabase SQL editor.',
@@ -64,25 +75,41 @@ function throwIfError(error: DbError): void {
 }
 
 export function createSupabaseApi(sb: SupabaseClient): TournamentApi {
+  let upgraded = true // learned from the first fetch
+  const needsUpgrade = () => new Error('This needs the one-time database upgrade (migration 003) first. Everything else keeps working meanwhile.')
   return {
     mode: 'supabase',
 
     async fetchAll() {
-      const [players, matches, settings] = await Promise.all([
+      const [players, matches, settingsFull] = await Promise.all([
         sb.from('players').select('*').order('created_at', { ascending: true }),
         sb.from('matches').select('*').order('match_number', { ascending: true }),
-        sb.from('tournament_settings').select('name, subtitle, organizer').eq('id', 1).maybeSingle(),
+        sb.from('tournament_settings').select('name, subtitle, organizer, advancement_mode').eq('id', 1).maybeSingle(),
       ])
+      // Database not upgraded yet (no advancement_mode column): keep the public site working, old behaviour = automatic.
+      // We do not rely on the exact error code: if the full query fails but the plain one works, the only difference
+      // between them is the new column, so the database simply has not been upgraded.
+      let settings = settingsFull as unknown as { data: Partial<TournamentSettings> | null; error: DbError }
+      upgraded = true
+      if (settingsFull.error) {
+        const legacy = await sb.from('tournament_settings').select('name, subtitle, organizer').eq('id', 1).maybeSingle()
+        if (!legacy.error) {
+          upgraded = false
+          settings = { error: null, data: legacy.data ? { ...(legacy.data as Partial<TournamentSettings>), advancement_mode: 'AUTO' } : null }
+        }
+      }
       throwIfError(players.error)
       throwIfError(matches.error)
       throwIfError(settings.error)
       return {
+        schemaUpgraded: upgraded,
         players: (players.data ?? []) as Player[],
         matches: (matches.data ?? []) as Match[],
         settings: (settings.data as TournamentSettings | null) ?? {
           name: 'FC 26 Knockout Cup',
           subtitle: 'The Road to the Final',
           organizer: 'IT Committee, IIM Bodh Gaya',
+          advancement_mode: upgraded ? 'MANUAL' : 'AUTO',
         },
       }
     },
@@ -123,6 +150,15 @@ export function createSupabaseApi(sb: SupabaseClient): TournamentApi {
       const { error } = await sb.from('matches').insert(input)
       throwIfError(error)
     },
+    async createExtraMatch(player1Id, player2Id, scheduledAt) {
+      if (!upgraded) throw needsUpgrade()
+      const { error } = await sb.rpc('create_extra_match', {
+        p_player1_id: player1Id,
+        p_player2_id: player2Id,
+        p_scheduled_at: scheduledAt,
+      })
+      throwIfError(error)
+    },
     async updateMatch(id, patch) {
       const { error } = await sb.from('matches').update(patch).eq('id', id)
       throwIfError(error)
@@ -145,15 +181,23 @@ export function createSupabaseApi(sb: SupabaseClient): TournamentApi {
       const { error } = await sb.rpc('generate_bracket', { p_player_ids: ids })
       throwIfError(error)
     },
+    async completeBracket(ids) {
+      if (!upgraded) throw needsUpgrade()
+      const { error } = await sb.rpc('complete_bracket', { p_unplaced_player_ids: ids })
+      throwIfError(error)
+    },
     async resetTournament() {
       const { error } = await sb.rpc('reset_tournament')
       throwIfError(error)
     },
 
     async updateSettings(s) {
+      // Before the upgrade the column does not exist: saving branding must never try to write it.
+      const { advancement_mode, ...branding } = s
+      const payload = upgraded ? { ...branding, advancement_mode } : branding
       const { error } = await sb
         .from('tournament_settings')
-        .update({ ...s, updated_at: new Date().toISOString() })
+        .update({ ...payload, updated_at: new Date().toISOString() })
         .eq('id', 1)
       throwIfError(error)
     },

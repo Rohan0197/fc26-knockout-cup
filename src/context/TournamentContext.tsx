@@ -15,6 +15,8 @@ interface TournamentContextValue {
   error: string | null
   /** Re-fetch from the backend (called after admin writes and on realtime pings). */
   refresh: () => Promise<void>
+  /** false until the one-time database upgrade (migration 003) has been run; new features hide themselves meanwhile. */
+  schemaReady: boolean
   /** Bumps whenever data changed after the first load - drives the "LIVE UPDATE" indicator. */
   liveTick: number
   mode: 'supabase' | 'demo'
@@ -24,6 +26,7 @@ const DEFAULT_SETTINGS: TournamentSettings = {
   name: 'FC 26 Knockout Cup',
   subtitle: 'The Road to the Final',
   organizer: 'IT Committee, IIM Bodh Gaya',
+  advancement_mode: 'MANUAL',
 }
 
 const Ctx = createContext<TournamentContextValue | null>(null)
@@ -44,6 +47,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<LoadStatus>('loading')
   const [error, setError] = useState<string | null>(null)
   const [liveTick, setLiveTick] = useState(0)
+  const [schemaReady, setSchemaReady] = useState(true)
   const sig = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -55,6 +59,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
       setPlayers(data.players)
       setMatches(data.matches)
       setSettings(data.settings)
+      setSchemaReady(data.schemaUpgraded)
       setError(null)
       setStatus('ready')
     } catch (e) {
@@ -78,8 +83,8 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
   const tournament = useMemo(() => computeTournamentState(matches, players), [matches, players])
 
   const value = useMemo<TournamentContextValue>(
-    () => ({ players, matches, settings, standings, tournament, status, error, refresh, liveTick, mode: api.mode }),
-    [players, matches, settings, standings, tournament, status, error, refresh, liveTick, api.mode],
+    () => ({ players, matches, settings, standings, tournament, status, error, refresh, schemaReady, liveTick, mode: api.mode }),
+    [players, matches, settings, standings, tournament, status, error, refresh, schemaReady, liveTick, api.mode],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

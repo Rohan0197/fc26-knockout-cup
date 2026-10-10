@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Check, Shuffle, Swords, Trash2 } from 'lucide-react'
 import { backend } from '../../lib/api'
-import { ROUND_LABEL, VALID_BRACKET_SIZES, firstRoundFor } from '../../lib/bracket'
+import { MAX_BRACKET_PLAYERS, MIN_BRACKET_PLAYERS, ROUND_LABEL, buildBracketSkeleton, describeBracket, isBracketMatch, stageRound } from '../../lib/bracket'
 import { useTournament } from '../../context/TournamentContext'
 import { useAdminAction } from '../../hooks/useAdminAction'
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
+import { AdvancePlayers } from '../../components/admin/AdvancePlayers'
+import { FinishBracket } from '../../components/admin/FinishBracket'
+import { AdvancementModeSwitch } from '../../components/admin/AdvancementModeSwitch'
+import { UpgradeNotice } from '../../components/admin/UpgradeNotice'
 import { KnockoutBracket } from '../../components/KnockoutBracket'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { PlayerAvatar } from '../../components/ui/PlayerAvatar'
@@ -21,7 +25,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 function Generator() {
-  const { players } = useTournament()
+  const { players, schemaReady } = useTournament()
   const run = useAdminAction()
   const [selected, setSelected] = useState<string[]>([])
   const [randomDraw, setRandomDraw] = useState(true)
@@ -30,8 +34,15 @@ function Generator() {
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
 
   const n = selected.length
-  const valid = (VALID_BRACKET_SIZES as readonly number[]).includes(n)
-  const first = firstRoundFor(n)
+  // Until the database is upgraded its generator only knows full brackets (2, 4, 8, 16, 32 or 64 players).
+  const powerOfTwo = n > 0 && (n & (n - 1)) === 0
+  const valid = n >= MIN_BRACKET_PLAYERS && n <= MAX_BRACKET_PLAYERS && (schemaReady || powerOfTwo)
+
+  const preview = useMemo(() => {
+    if (!draw) return null
+    const skeleton = buildBracketSkeleton(draw)
+    return { skeleton, ...describeBracket(skeleton) }
+  }, [draw])
 
   const toggle = (id: string) => {
     setDraw(null)
@@ -46,16 +57,19 @@ function Generator() {
   }
 
   if (players.length < 2) {
-    return (
-      <div className="panel p-6 text-sm text-mute">Add at least two players before generating a bracket.</div>
-    )
+    return <div className="panel p-6 text-sm text-mute">Add at least two players before generating a bracket.</div>
   }
+
+  const name = (id: string | null) => (id ? (byId.get(id)?.name ?? '?') : 'TBD')
 
   return (
     <div className="panel p-5 sm:p-6">
       <div className="eyebrow mb-1 !text-[0.72rem]">Step 1</div>
       <h2 className="display text-3xl text-white">Choose who's playing</h2>
-      <p className="mt-1 text-sm text-mute">A knockout bracket needs exactly 2, 4, 8, 16, 32 or 64 players.</p>
+      <p className="mt-1 text-sm text-mute">
+        Any number from {MIN_BRACKET_PLAYERS} to {MAX_BRACKET_PLAYERS}. Everyone plays in the first round; a bye only happens when a round has an
+        odd number of players.
+      </p>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {players.map((p) => {
@@ -80,16 +94,23 @@ function Generator() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-4">
-        <button className="btn btn-ghost btn-sm" onClick={() => { setDraw(null); setSelected(players.map((p) => p.id)) }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => { setDraw(null); setSelected(players.slice(0, MAX_BRACKET_PLAYERS).map((p) => p.id)) }}>
           Select all
         </button>
         <button className="btn btn-ghost btn-sm" onClick={() => { setDraw(null); setSelected([]) }} disabled={n === 0}>
           Clear
         </button>
         <span className={`label text-[0.85rem] ${valid ? 'text-pitch' : 'text-mute'}`}>
-          {n} selected {valid && first ? `· starts at ${ROUND_LABEL[first]}` : ''}
+          {n} selected {valid ? `· ${n - 1} matches · starts at ${ROUND_LABEL[stageRound(n)]}` : ''}
         </span>
       </div>
+      {!schemaReady && n >= MIN_BRACKET_PLAYERS && n <= MAX_BRACKET_PLAYERS && !powerOfTwo && (
+        <p className="mt-2 text-sm text-warn">
+          Until the database upgrade is run, a bracket needs exactly 2, 4, 8, 16, 32 or 64 players. Any number (like {n}) works after the upgrade.
+        </p>
+      )}
+      {n > MAX_BRACKET_PLAYERS && <p className="mt-2 text-sm text-warn">A bracket holds at most {MAX_BRACKET_PLAYERS} players. Deselect {n - MAX_BRACKET_PLAYERS}.</p>}
+      {n === 1 && <p className="mt-2 text-sm text-warn">Select at least {MIN_BRACKET_PLAYERS} players.</p>}
 
       <div className="mt-7 border-t border-white/[0.07] pt-6">
         <div className="eyebrow mb-1 !text-[0.72rem]">Step 2</div>
@@ -109,26 +130,60 @@ function Generator() {
           >
             <Shuffle size={16} /> {draw ? 'Redraw' : 'Draw'}
           </button>
-          {!valid && n > 0 && <span className="text-sm text-warn">{n < 2 ? 'Select at least 2 players.' : `Select ${VALID_BRACKET_SIZES.find((x) => x > n) ?? 64} players${VALID_BRACKET_SIZES.filter((x) => x < n).length ? ` (or ${VALID_BRACKET_SIZES.filter((x) => x < n).pop()})` : ''}.`}</span>}
         </div>
 
-        {draw && (
-          <div className="mt-5">
-            <div className="label mb-2 text-[0.75rem] text-mute">{first && ROUND_LABEL[first]} pairings</div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {Array.from({ length: draw.length / 2 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 bg-white/[0.04] px-3 py-2.5 ring-1 ring-inset ring-white/10">
-                  <span className="num w-7 text-lg text-mute">M{i + 1}</span>
-                  <span className="display min-w-0 flex-1 truncate text-xl text-white">
-                    {byId.get(draw[2 * i])?.name} <span className="text-mute">vs</span> {byId.get(draw[2 * i + 1])?.name}
-                  </span>
-                </div>
-              ))}
+        {preview && draw && (
+          <div className="mt-5 space-y-6">
+            <div>
+              <div className="label mb-2 text-[0.75rem] text-mute">How the tournament will run</div>
+              <ol className="divide-y divide-white/[0.06] border border-white/[0.08]">
+                {preview.plan.map((r, i) => (
+                  <li key={r.round} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5">
+                    <span className="display w-40 text-xl text-white">{ROUND_LABEL[r.round]}</span>
+                    <span className="num text-lg text-pitch">{r.matches} {r.matches === 1 ? 'match' : 'matches'}</span>
+                    {r.byes > 0 && (
+                      <span className="text-sm text-warn">
+                        {r.byes} {r.byes === 1 ? 'player skips' : 'players skip'} this round (bye): the winner of the last{' '}
+                        {ROUND_LABEL[preview.plan[i - 1]?.round ?? preview.firstRound]} match
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-2 text-xs text-mute">
+                Every match knocks one player out, so a bracket of {draw.length} always has {draw.length - 1} matches in total.
+              </p>
             </div>
-            <button className="btn btn-primary mt-5" onClick={create} disabled={busy}>
-              <Swords size={16} /> {busy ? 'Creating…' : 'Create bracket'}
-            </button>
-            <p className="mt-2 text-xs text-mute">Later rounds are created empty and fill in automatically as results are entered. You can set dates afterwards under Fixtures.</p>
+
+            {preview.earlyPlayers.length > 0 && (
+              <div className="border-l-2 border-warn bg-warn/10 px-3 py-2 text-sm text-warn">
+                With an odd number of players, <strong>{name(preview.earlyPlayers[0])}</strong> has no opponent in the {ROUND_LABEL[preview.firstRound]}{' '}
+                and starts in the next round. Add or remove one player to avoid this.
+              </div>
+            )}
+
+            <div>
+              <div className="label mb-2 text-[0.75rem] text-mute">{ROUND_LABEL[preview.firstRound]} pairings</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {preview.skeleton
+                  .filter((m) => m.round === preview.firstRound)
+                  .map((m) => (
+                    <div key={m.key} className="flex items-center gap-3 bg-white/[0.04] px-3 py-2.5 ring-1 ring-inset ring-white/10">
+                      <span className="num w-8 text-lg text-mute">M{m.match_number}</span>
+                      <span className="display min-w-0 flex-1 truncate text-xl text-white">
+                        {name(m.player1_id)} <span className="text-mute">vs</span> {name(m.player2_id)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div>
+              <button className="btn btn-primary" onClick={create} disabled={busy}>
+                <Swords size={16} /> {busy ? 'Creating…' : 'Create bracket'}
+              </button>
+              <p className="mt-2 text-xs text-mute">Later rounds are created empty and fill in automatically as results are entered. You can set dates afterwards under Fixtures.</p>
+            </div>
           </div>
         )}
       </div>
@@ -137,22 +192,33 @@ function Generator() {
 }
 
 export default function AdminBracket() {
-  const { matches, tournament } = useTournament()
+  const { matches, tournament, schemaReady } = useTournament()
   const run = useAdminAction()
   const [resetting, setResetting] = useState(false)
+  const hasBracket = matches.some(isBracketMatch) // extra matches alone don't make a bracket
 
   return (
     <>
       <AdminPageHeader
         title="Bracket"
-        subtitle="Winners advance automatically when you enter a result. This is exactly what the public sees."
+        subtitle="This is exactly what the public sees. You choose whether winners advance by themselves or you decide who goes to each next round."
       />
 
-      {matches.length === 0 ? (
+      <UpgradeNotice feature="Choosing who goes to the next round, brackets for any number of players, and finishing a hand-made bracket" />
+      {schemaReady && (
+        <div className="panel mb-6 p-4 sm:p-5">
+          <h2 className="display mb-3 text-2xl text-white">Who goes to the next round?</h2>
+          <AdvancementModeSwitch />
+        </div>
+      )}
+
+      {!hasBracket ? (
         <Generator />
       ) : (
         <>
+          <FinishBracket />
           <KnockoutBracket />
+          <AdvancePlayers />
 
           <div className="panel mt-8 border-danger/30 p-5 sm:p-6">
             <div className="flex items-start gap-3">

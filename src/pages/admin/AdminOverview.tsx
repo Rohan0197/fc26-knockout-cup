@@ -6,6 +6,7 @@ import { recentResults, upcomingMatches } from '../../lib/calculations'
 import { fmtKickoff } from '../../utils/format'
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
 import { AnimatedNumber } from '../../components/ui/AnimatedNumber'
+import { UpgradeNotice } from '../../components/admin/UpgradeNotice'
 
 function Tile({ label, value, text, accent }: { label: string; value?: number; text?: string; accent?: boolean }) {
   return (
@@ -41,6 +42,8 @@ export default function AdminOverview() {
   return (
     <>
       <AdminPageHeader title="Overview" subtitle="Everything here is calculated from the match results you enter — nothing is edited by hand." />
+
+      <UpgradeNotice />
 
       {status === 'loading' ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

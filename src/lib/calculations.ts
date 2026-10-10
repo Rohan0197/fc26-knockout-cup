@@ -23,14 +23,19 @@ export function computeStandings(players: Player[], matches: Match[]): Standing[
     const losses = mine.length - wins
     const played = wins + losses
 
+    // A loss no longer ends a player's tournament (the admin can give anyone another match). A player is OUT only
+    // when their latest result was a loss and nothing is scheduled for them.
+    const hasOpenMatch = live.some(
+      (m) => m.status !== 'COMPLETED' && (m.player1_id === player.id || m.player2_id === player.id),
+    )
+    const latest = mine.slice().sort((a, b) => (b.completed_at ?? b.created_at).localeCompare(a.completed_at ?? a.created_at))[0]
+    const lastWasWin = latest?.winner_id === player.id
+
     let status: PlayerStatus
     if (championId === player.id) status = 'CHAMPION'
-    else if (losses > 0) status = 'ELIMINATED'
-    else if (
-      live.some((m) => m.status !== 'COMPLETED' && (m.player1_id === player.id || m.player2_id === player.id))
-    )
-      status = 'ACTIVE'
-    else status = played > 0 ? 'ACTIVE' : 'WAITING'
+    else if (hasOpenMatch) status = 'ACTIVE'
+    else if (played === 0) status = 'WAITING'
+    else status = lastWasWin ? 'ACTIVE' : 'ELIMINATED'
 
     return {
       order,
@@ -73,7 +78,7 @@ export function computeTournamentState(matches: Match[], players: Player[]): Tou
     (champion ? 'FINAL' : null)
 
   return {
-    phase: remaining === 0 ? 'COMPLETE' : 'LIVE',
+    phase: remaining === 0 || champion ? 'COMPLETE' : 'LIVE',
     currentRound,
     totalMatches: active.length,
     completed,

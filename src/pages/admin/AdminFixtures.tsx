@@ -7,6 +7,7 @@ import { useTournament } from '../../context/TournamentContext'
 import { useAdminAction } from '../../hooks/useAdminAction'
 import { fmtKickoff, fromDateTimeInputs, pad2, toDateTimeInputs } from '../../utils/format'
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
+import { UpgradeNotice } from '../../components/admin/UpgradeNotice'
 import { Field } from '../../components/admin/Field'
 import { Modal } from '../../components/ui/Modal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -15,14 +16,15 @@ import { StatusPill } from '../../components/ui/StatusPill'
 
 const api = backend!.api
 const EDITABLE_STATUSES: MatchStatus[] = ['UPCOMING', 'LIVE', 'CANCELLED']
+const ALL_ROUNDS: Round[] = [...ROUND_ORDER, 'EXTRA']
 
-function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () => void }) {
-  const { players, matches } = useTournament()
+function FixtureForm({ editing, preset, onClose }: { editing: Match | null; preset?: Round; onClose: () => void }) {
+  const { players, matches, schemaReady } = useTournament()
   const run = useAdminAction()
   const locked = editing?.status === 'COMPLETED' // players/round/number are frozen once played
   const initial = toDateTimeInputs(editing?.scheduled_at ?? null)
 
-  const [round, setRound] = useState<Round>(editing?.round ?? ROUND_ORDER.find((r) => !matches.some((m) => m.round === r)) ?? 'QUARTER_FINAL')
+  const [round, setRound] = useState<Round>(editing?.round ?? preset ?? ROUND_ORDER.find((r) => matches.some((m) => m.round === r)) ?? 'QUARTER_FINAL')
   const nextNumber = useMemo(() => Math.max(0, ...matches.filter((m) => m.round === round).map((m) => m.match_number)) + 1, [matches, round])
   const [number, setNumber] = useState<string>(String(editing?.match_number ?? nextNumber))
   const [p1, setP1] = useState(editing?.player1_id ?? '')
@@ -33,19 +35,27 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
   const [touched, setTouched] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const n = Number(number)
+  // Extra matches sit outside the bracket: unlimited, numbered automatically, any pair of players (repeats allowed).
+  const isExtra = round === 'EXTRA'
+  const n = isExtra ? (editing?.match_number ?? nextNumber) : Number(number)
   const errors: Record<string, string> = {}
-  if (!Number.isInteger(n) || n < 1 || n > 32) errors.number = 'Match number must be a whole number from 1 to 32.'
-  else if (matches.some((m) => m.id !== editing?.id && m.round === round && m.match_number === n))
-    errors.number = `${ROUND_LABEL[round]} match ${n} already exists.`
-  if (p1 && p1 === p2) errors.p2 = 'A player cannot play themselves.'
-  for (const [key, pid] of [['p1', p1], ['p2', p2]] as const) {
-    if (!pid) continue
-    const clash = matches.find(
-      (m) => m.id !== editing?.id && m.round === round && m.status !== 'CANCELLED' && (m.player1_id === pid || m.player2_id === pid),
-    )
-    if (clash && !errors[key]) errors[key] = `Already playing in ${ROUND_LABEL[round]} match ${clash.match_number}.`
+  if (!isExtra) {
+    if (!Number.isInteger(n) || n < 1 || n > 32) errors.number = 'Match number must be a whole number from 1 to 32.'
+    else if (matches.some((m) => m.id !== editing?.id && m.round === round && m.match_number === n))
+      errors.number = `${ROUND_LABEL[round]} match ${n} already exists.`
+  } else if (!editing || !locked) {
+    if (!p1) errors.p1 = 'Choose a player.'
+    if (!p2) errors.p2 = 'Choose a player.'
   }
+  if (p1 && p1 === p2) errors.p2 = 'A player cannot play themselves.'
+  if (!isExtra)
+    for (const [key, pid] of [['p1', p1], ['p2', p2]] as const) {
+      if (!pid) continue
+      const clash = matches.find(
+        (m) => m.id !== editing?.id && m.round === round && m.status !== 'CANCELLED' && (m.player1_id === pid || m.player2_id === pid),
+      )
+      if (clash && !errors[key]) errors[key] = `Already playing in ${ROUND_LABEL[round]} match ${clash.match_number}.`
+    }
   if (time && !date) errors.date = 'Pick a date for this kick-off time.'
 
   const submit = async () => {
@@ -67,8 +77,10 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
               editing.id,
               locked ? { scheduled_at: input.scheduled_at } : input, // a played match can only be rescheduled here
             )
-          : api.createMatch(input),
-      editing ? 'Fixture updated.' : 'Fixture created.',
+          : isExtra
+            ? api.createExtraMatch(p1, p2, input.scheduled_at)
+            : api.createMatch(input),
+      editing ? 'Fixture updated.' : isExtra ? 'Extra match added.' : 'Fixture created.',
     )
     setBusy(false)
     if (ok) onClose()
@@ -77,7 +89,7 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
   const err = (k: string) => (touched ? errors[k] : undefined)
   const playerOptions = (
     <>
-      <option value="">TBD (decided by earlier round)</option>
+      <option value="">{isExtra ? 'Choose a player…' : 'TBD (decided by earlier round)'}</option>
       {players.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name}
@@ -90,8 +102,8 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
     <Modal
       open
       onClose={onClose}
-      eyebrow={editing ? 'Edit fixture' : 'New fixture'}
-      title={editing ? `${ROUND_LABEL[editing.round]} · Match ${pad2(editing.match_number)}` : 'Add fixture'}
+      eyebrow={editing ? 'Edit fixture' : isExtra ? 'Extra match' : 'New fixture'}
+      title={editing ? `${ROUND_LABEL[editing.round]} · Match ${pad2(editing.match_number)}` : isExtra ? 'Add extra match' : 'Add fixture'}
       width="max-w-xl"
       footer={
         <>
@@ -117,20 +129,28 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
             value={round}
             disabled={locked}
             onChange={(e) => {
-              setRound(e.target.value as Round)
-              if (!editing) setNumber('1')
+              const r = e.target.value as Round
+              setRound(r)
+              // suggest the next free match number of the round you picked (never a number that already exists)
+              if (!editing) setNumber(String(Math.max(0, ...matches.filter((m) => m.round === r).map((m) => m.match_number)) + 1))
             }}
           >
-            {ROUND_ORDER.map((r) => (
+            {ALL_ROUNDS.filter((r) => r !== 'EXTRA' || schemaReady || editing?.round === 'EXTRA').map((r) => (
               <option key={r} value={r}>
-                {ROUND_LABEL[r]}
+                {r === 'EXTRA' ? 'Extra match (outside the bracket)' : ROUND_LABEL[r]}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Match number" error={err('number')}>
-          <input className="input" inputMode="numeric" value={number} disabled={locked} onChange={(e) => setNumber(e.target.value)} aria-invalid={Boolean(err('number'))} />
-        </Field>
+        {isExtra ? (
+          <Field label="Match number" hint="Numbered automatically.">
+            <input className="input" value={editing ? pad2(editing.match_number) : pad2(nextNumber)} disabled readOnly />
+          </Field>
+        ) : (
+          <Field label="Match number" error={err('number')}>
+            <input className="input" inputMode="numeric" value={number} disabled={locked} onChange={(e) => setNumber(e.target.value)} aria-invalid={Boolean(err('number'))} />
+          </Field>
+        )}
         <Field label="Player 1" error={err('p1')}>
           <select className="input" value={p1} disabled={locked} onChange={(e) => setP1(e.target.value)} aria-invalid={Boolean(err('p1'))}>
             {playerOptions}
@@ -159,16 +179,18 @@ function FixtureForm({ editing, onClose }: { editing: Match | null; onClose: () 
         </Field>
       </div>
       <p className="mt-4 text-xs text-mute">
-        Leave a player as TBD for later rounds — winners advance into them automatically.
+        {isExtra
+          ? 'Extra matches are outside the bracket: add as many as you like, between any two players (even the same pair again). Their results count in the standings.'
+          : 'Leave a player as TBD for later rounds. In automatic mode winners are placed into them for you; in manual mode you place players from the Bracket page.'}
       </p>
     </Modal>
   )
 }
 
 export default function AdminFixtures() {
-  const { matches, players, status } = useTournament()
+  const { matches, players, status, schemaReady } = useTournament()
   const run = useAdminAction()
-  const [editing, setEditing] = useState<Match | 'new' | null>(null)
+  const [editing, setEditing] = useState<Match | 'new' | 'extra' | null>(null)
   const [deleting, setDeleting] = useState<Match | null>(null)
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const rounds = useMemo(() => groupByRound(matches), [matches])
@@ -179,11 +201,20 @@ export default function AdminFixtures() {
         title="Fixtures"
         subtitle="Stored in the database and shown live on the public site. Use the Bracket page to generate a whole bracket at once."
         actions={
-          <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={players.length < 2}>
-            <Plus size={16} /> Add fixture
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {schemaReady && (
+              <button className="btn btn-ghost" onClick={() => setEditing('extra')} disabled={players.length < 2}>
+                <Plus size={16} /> Add extra match
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={players.length < 2}>
+              <Plus size={16} /> Add fixture
+            </button>
+          </div>
         }
       />
+
+      <UpgradeNotice feature="Extra matches" />
 
       {status === 'loading' ? (
         <div className="space-y-2">
@@ -245,7 +276,14 @@ export default function AdminFixtures() {
         </div>
       )}
 
-      {editing && <FixtureForm key={editing === 'new' ? 'new' : editing.id} editing={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <FixtureForm
+          key={typeof editing === 'string' ? editing : editing.id}
+          editing={typeof editing === 'string' ? null : editing}
+          preset={editing === 'extra' ? 'EXTRA' : undefined}
+          onClose={() => setEditing(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={Boolean(deleting)}

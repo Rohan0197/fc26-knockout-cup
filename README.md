@@ -70,12 +70,36 @@ Export your sign-up sheet as CSV with columns `name` (required) and optionally `
 Delete any other columns (emails, phone numbers…) first, then in Supabase: **Table Editor → `players` → Insert → Import data from CSV**.
 Duplicate names are rejected by the database, so re-importing is safe.
 
-### Upgrading an existing database to 64-player brackets
+### Upgrading an existing database (safe for a tournament that is already running)
 
-If you ran `supabase/schema.sql` before 64-player support was added, run
-[`supabase/migrations/001_64_player_bracket.sql`](supabase/migrations/001_64_player_bracket.sql) once in the SQL Editor.
-It only adds the *Round of 64* / *Round of 32* rounds and the bigger bracket generator. Players and results are untouched.
-New setups already include it.
+If you set the database up from an older `supabase/schema.sql`, run
+[`supabase/migrations/003_extra_matches_manual_advance.sql`](supabase/migrations/003_extra_matches_manual_advance.sql) once in the SQL Editor.
+It adds the Round of 64 / 32, brackets for any number of players (2-64), unlimited extra matches, and the
+"admin decides who goes to the next round" setting. It is self-contained (includes migrations 001 and 002) and safe to re-run.
+
+**It does not change your data.** Players, fixtures, scores, winners, dates and standings stay exactly as they are (tested field by field),
+and a running tournament **keeps automatic advancement**; switch to Manual in Admin → Settings only when you want to.
+You can run the migration *before* publishing the new site files: the current site keeps working. If you publish the site first, it
+keeps working too and treats the tournament as automatic until the migration is run.
+
+**If your first round was created by hand** (Admin → Fixtures → Add fixture) and results are already entered, use the new
+**Finish the bracket** panel on Admin → Bracket after the migration. It pairs any players not yet in a fixture, builds the remaining
+rounds and the winner-goes-to links around your existing fixtures, and (in automatic mode) places the winners you already have.
+Every existing fixture and result stays exactly as it is (tested field by field). It only appears while the bracket is a first round alone.
+
+Recommended routine (about 2 minutes):
+
+1. *(optional safety copy, inside the same database)* In the SQL Editor:
+   ```sql
+   create table backup_players as select * from public.players;
+   create table backup_matches as select * from public.matches;
+   alter table backup_players enable row level security;   -- no policies = nobody can read them through the website
+   alter table backup_matches enable row level security;
+   ```
+2. Note your numbers: `select (select count(*) from players) p, (select count(*) from matches) m, (select count(*) from matches where status='COMPLETED') done;`
+3. Run migration 003.
+4. Run the query from step 2 again: the three numbers must be identical.
+5. Check the site and the admin Results page. When you are happy, you can delete the copies: `drop table backup_players, backup_matches;`
 
 ### Optional: demo data in Supabase
 
@@ -86,11 +110,22 @@ then delete the players.
 ## 3 · Running the tournament
 
 1. **Players** – load the starting list once in Supabase (below), then use **Admin → Players** to add, edit or remove anyone later (name required, duplicates blocked, optional club / avatar URL).
-2. **Admin → Bracket** – tick 2, 4, 8, 16, 32 or 64 players, *Draw* (random or in order), *Create bracket*. A 64-player bracket starts at the Round of 64 and runs 32 → 16 → quarter-finals → semi-finals → final (63 matches). All rounds are created;
+2. **Admin → Bracket** – tick **any number of players from 2 to 64**, *Draw* (random or in order), check the preview, *Create bracket*.
+   Everyone plays in the first round; a **bye** only appears when a round has an odd number of players (the winner of that round's
+   last match skips the next round). For 54 players: Round of 64 (27 matches) → Round of 32 (13) → Round of 16 (7) → Quarter Final (3)
+   → Semi Final (2) → Final (1) = 53 matches (always players − 1). All rounds are created;
    later rounds fill themselves in.
+   **Who goes to the next round** is your choice (Admin → Bracket, or Settings): *Manual* (default) means results never move anyone and
+   you place any player into each next-round match from the **Advance players** panel (one click fills empty slots from the winners, and
+   you can change any slot, including putting a player who lost back in). *Automatic* places winners for you.
 3. **Admin → Fixtures** – set dates/times, or add/edit single fixtures by hand.
 4. **Admin → Results** – *Enter result*. Type two scores; the winner, stats, standings and bracket update everywhere.
    Wrong score? *Edit result* → review → confirm. Everything is recalculated.
+
+**Extra matches (unlimited).** Admin → Fixtures → *Add extra match* creates a match between any two players, as many times as you
+like (rematches, second chances). Extra matches sit outside the bracket, are numbered automatically, show on Fixtures and Results, and
+their results count in the standings. A player is shown as *Eliminated* only when their latest result was a loss and nothing is
+scheduled for them, so adding any match for them brings them back.
 
 You never type wins, losses or points — there is nowhere to.
 

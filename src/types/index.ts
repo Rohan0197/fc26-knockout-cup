@@ -1,4 +1,4 @@
-export type Round = 'ROUND_OF_64' | 'ROUND_OF_32' | 'ROUND_OF_16' | 'QUARTER_FINAL' | 'SEMI_FINAL' | 'FINAL'
+export type Round = 'ROUND_OF_64' | 'ROUND_OF_32' | 'ROUND_OF_16' | 'QUARTER_FINAL' | 'SEMI_FINAL' | 'FINAL' | 'EXTRA'
 export type MatchStatus = 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'CANCELLED'
 
 export interface Player {
@@ -23,12 +23,19 @@ export interface Match {
   scheduled_at: string | null
   completed_at: string | null
   created_at: string
+  /** Where the winner goes (set when the bracket is generated; null for the final and for hand-made fixtures). */
+  next_match_id?: string | null
+  next_slot?: 1 | 2 | null
 }
+
+/** MANUAL: the admin decides who goes to the next round. AUTO: winners are placed automatically. */
+export type AdvancementMode = 'AUTO' | 'MANUAL'
 
 export interface TournamentSettings {
   name: string
   subtitle: string
   organizer: string
+  advancement_mode: AdvancementMode
 }
 
 export type PlayerStatus = 'CHAMPION' | 'ACTIVE' | 'ELIMINATED' | 'WAITING'

@@ -10,7 +10,7 @@ export default function StandingsPage() {
   return (
     <>
       <PageHeader eyebrow="The race to the title" title="Tournament standings">
-        Win = 1 point · Loss = 0. Knockout format: one defeat and you're out — so every match counts.
+        Win = 1 point · Loss = 0. Every match counts, including any extra matches the organisers add.
       </PageHeader>
       {loading ? (
         <StandingsSkeleton />
