@@ -75,10 +75,16 @@ export function computeTournamentState(matches: Match[], players: Player[]): Tou
 
   const currentRound =
     ROUND_ORDER.find((r) => active.some((m) => m.round === r && m.status !== 'COMPLETED')) ??
-    (champion ? 'FINAL' : null)
+    (champion ? 'FINAL' : ([...ROUND_ORDER].reverse().find((r) => active.some((m) => m.round === r)) ?? null))
+
+  // "Complete" means the last round of the bracket is a single finished match. Every fixture being played is not enough:
+  // a bracket that so far only has its first round (all played) is still waiting for the later rounds.
+  const lastRound = [...ROUND_ORDER].reverse().find((r) => active.some((m) => m.round === r))
+  const lastRoundMatches = lastRound ? active.filter((m) => m.round === lastRound) : []
+  const finished = lastRoundMatches.length === 1 && lastRoundMatches[0].status === 'COMPLETED' && remaining === 0
 
   return {
-    phase: remaining === 0 || champion ? 'COMPLETE' : 'LIVE',
+    phase: champion || finished ? 'COMPLETE' : 'LIVE',
     currentRound,
     totalMatches: active.length,
     completed,
